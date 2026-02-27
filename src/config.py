@@ -1,11 +1,14 @@
 import os
+import warnings
 from pydantic_settings import BaseSettings
 from typing import List
+
+_DEFAULT_SECRET_KEY = "wasi-dev-secret-key-change-in-production"
 
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./wasi.db"
-    SECRET_KEY: str = "wasi-dev-secret-key-change-in-production"
+    SECRET_KEY: str = _DEFAULT_SECRET_KEY
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     DEFAULT_QUERY_COST: float = 1.0
@@ -32,3 +35,17 @@ if _raw_url.startswith("postgres://"):
     os.environ["DATABASE_URL"] = _raw_url.replace("postgres://", "postgresql://", 1)
 
 settings = Settings()
+
+# Production guard: refuse to start with the default placeholder secret key
+if not settings.DEBUG and settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
+    raise RuntimeError(
+        "FATAL: SECRET_KEY is still the default placeholder. "
+        "Set a cryptographically random SECRET_KEY in your .env or environment "
+        "before running in production (DEBUG=False)."
+    )
+if settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
+    warnings.warn(
+        "Using default SECRET_KEY — acceptable for local development only. "
+        "Set a strong SECRET_KEY before deploying.",
+        stacklevel=1,
+    )

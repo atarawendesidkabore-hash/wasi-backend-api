@@ -9,6 +9,7 @@ services:
     name: wasi-backend-api
     runtime: python
     plan: free
+    repo: https://github.com/atarawendesidkabore-hash/wasi-backend-api
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn src.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     envVars:
@@ -30,6 +31,8 @@ services:
   - type: web
     name: wasi-frontend
     runtime: static
+    plan: free
+    repo: https://github.com/atarawendesidkabore-hash/wasi-frontend
     buildCommand: echo "Static site - no build needed"
     staticPublishPath: .
     headers:
