@@ -1,0 +1,184 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import func, and_
+import numpy as np
+from src.database.connection import get_db
+from src.database.models import User, Country, CountryIndex, WASIComposite
+from src.engines.composite_engine import CompositeEngine
+from src.schemas.composite import CompositeResponse, CompositeReport
+from src.utils.security import get_current_user
+from src.utils.credits import deduct_credits
+from datetime import datetime
+from typing import Optional
+
+router = APIRouter(prefix="/api/composite", tags=["Composite"])
+
+
+def _get_latest_country_indices(db: Session):
+    """Fetch the most recent index value per country using a subquery."""
+    subq = (
+        db.query(
+            CountryIndex.country_id,
+            func.max(CountryIndex.period_date).label("max_date"),
+        )
+        .group_by(CountryIndex.country_id)
+        .subquery()
+    )
+    return (
+        db.query(CountryIndex, Country)
+        .join(
+            subq,
+            and_(
+                CountryIndex.country_id == subq.c.country_id,
+                CountryIndex.period_date == subq.c.max_date,
+            ),
+        )
+        .join(Country, Country.id == CountryIndex.country_id)
+        .all()
+    )
+
+
+@router.post("/calculate", response_model=CompositeResponse)
+async def calculate_composite(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Trigger a live WASI composite recalculation from the latest country indices.
+    Result is upserted into the database.
+    Costs 5 credits.
+    """
+    deduct_credits(current_user, db, "/api/composite/calculate", cost_multiplier=5.0)
+
+    rows = _get_latest_country_indices(db)
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No country index data available. Ingest CSV data first.",
+        )
+
+    country_indices = {row.Country.code: row.CountryIndex.index_value for row in rows}
+    period_date = max(row.CountryIndex.period_date for row in rows)
+
+    history_records = (
+        db.query(WASIComposite)
+        .order_by(WASIComposite.period_date.asc())
+        .all()
+    )
+    history_values = [r.composite_value for r in history_records]
+
+    engine = CompositeEngine()
+    result = engine.calculate_composite(country_indices, period_date, history_values)
+
+    exclude_keys = {"period_date", "country_contributions"}
+    existing = db.query(WASIComposite).filter(
+        WASIComposite.period_date == period_date
+    ).first()
+
+    if existing:
+        for k, v in result.items():
+            if k not in exclude_keys:
+                setattr(existing, k, v)
+        existing.calculated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    composite = WASIComposite(
+        period_date=period_date,
+        **{k: v for k, v in result.items() if k not in exclude_keys},
+        calculated_at=datetime.utcnow(),
+    )
+    db.add(composite)
+    db.commit()
+    db.refresh(composite)
+    return composite
+
+
+@router.get("/report", response_model=CompositeReport)
+async def get_composite_report(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Full composite report: latest value + 12-month history + country contributions.
+    Costs 3 credits.
+    """
+    deduct_credits(current_user, db, "/api/composite/report", cost_multiplier=3.0)
+
+    latest = (
+        db.query(WASIComposite)
+        .order_by(WASIComposite.period_date.desc())
+        .first()
+    )
+    if not latest:
+        raise HTTPException(
+            status_code=404,
+            detail="No composite data available. Call POST /api/composite/calculate first.",
+        )
+
+    history = (
+        db.query(WASIComposite)
+        .order_by(WASIComposite.period_date.desc())
+        .limit(12)
+        .all()
+    )
+
+    # Re-derive contributions from latest country indices
+    rows = _get_latest_country_indices(db)
+    engine = CompositeEngine()
+    country_indices = {row.Country.code: row.CountryIndex.index_value for row in rows}
+    available = {
+        code: val for code, val in country_indices.items()
+        if code in engine.COUNTRY_WEIGHTS
+    }
+    total_w = sum(engine.COUNTRY_WEIGHTS[c] for c in available)
+    contributions = {
+        code: round(val * (engine.COUNTRY_WEIGHTS[code] / total_w), 4)
+        for code, val in available.items()
+    }
+
+    # T6: concentration_warning — flag when any country's effective weight > 25%
+    # AND its current index_value is > 2 SD from its own 12-month historical mean.
+    concentration_warning: Optional[str] = None
+    for row in rows:
+        code = row.Country.code
+        if code not in available:
+            continue
+        eff_weight = engine.COUNTRY_WEIGHTS[code] / total_w
+        if eff_weight <= 0.25:
+            continue
+        # Fetch last 13 months (current + 12 history) for this country
+        hist_rows = (
+            db.query(CountryIndex)
+            .filter(CountryIndex.country_id == row.Country.id)
+            .order_by(CountryIndex.period_date.desc())
+            .limit(13)
+            .all()
+        )
+        hist_vals = [r.index_value for r in hist_rows if r.index_value is not None]
+        if len(hist_vals) < 3:
+            continue
+        # hist_vals[0] is current; rest are history
+        current_val = hist_vals[0]
+        hist_arr = np.array(hist_vals[1:], dtype=float)
+        mean = float(np.mean(hist_arr))
+        std = float(np.std(hist_arr, ddof=1)) if len(hist_arr) > 1 else 0.0
+        if std > 0 and abs(current_val - mean) > 2 * std:
+            sd_dist = abs(current_val - mean) / std
+            direction = "above" if current_val > mean else "below"
+            concentration_warning = (
+                f"{code} carries {eff_weight * 100:.1f}% of composite weight and "
+                f"its index ({current_val:.1f}) is {sd_dist:.1f}σ {direction} its "
+                f"12-month mean ({mean:.1f}). Composite may be distorted by "
+                f"single-country movement."
+            )
+            break  # report the first/most impactful offender
+
+    return CompositeReport(
+        latest=latest,
+        history_12m=history,
+        country_contributions=contributions,
+        generated_at=datetime.utcnow(),
+        concentration_warning=concentration_warning,
+    )

@@ -1,0 +1,42 @@
+databases:
+  - name: wasi-db
+    plan: free
+    databaseName: wasi
+    user: wasi_user
+
+services:
+  - type: web
+    name: wasi-backend-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn src.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: wasi-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        value: '["https://wasi-frontend.onrender.com","http://localhost:3000"]'
+      - key: PYTHON_VERSION
+        value: "3.11.11"
+      - key: SCHEDULER_ENABLED
+        value: "true"
+
+  - type: web
+    name: wasi-frontend
+    runtime: static
+    buildCommand: echo "Static site - no build needed"
+    staticPublishPath: .
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
