@@ -232,6 +232,7 @@ async def lifespan(app: FastAPI):
 
         # eCFA CBDC bootstrap — create treasury wallets for WAEMU countries
         try:
+            from src.database.models import Country
             from src.database.cbdc_models import CbdcWallet, CbdcFxRate
             from src.utils.cbdc_crypto import generate_wallet_id
             from datetime import date as _date
