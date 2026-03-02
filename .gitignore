@@ -34,3 +34,17 @@ data/*.csv
 
 # Claude
 .claude/
+
+# Dev/test artifacts
+NUL
+*.log
+*.db-shm
+*.db-wal
+_stress_token.txt
+stress_report.html
+stress_results_*.csv
+stress_test.py
+stress_test_async.py
+kill_servers.ps1
+start_server.bat
+node_modules/

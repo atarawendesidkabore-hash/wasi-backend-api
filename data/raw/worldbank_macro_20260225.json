@@ -1,0 +1,109 @@
+{
+  "downloaded_at": "2026-02-25",
+  "data": {
+    "CI": {
+      "gdp_growth": {
+        "value": 6.02,
+        "year": "2024"
+      }
+    },
+    "NG": {
+      "debt_gdp": {
+        "value": null,
+        "year": null
+      }
+    },
+    "GH": {
+      "gdp_growth": {
+        "value": 5.59,
+        "year": "2024"
+      }
+    },
+    "SN": {
+      "inflation": {
+        "value": 0.8,
+        "year": "2024"
+      },
+      "debt_gdp": {
+        "value": null,
+        "year": null
+      }
+    },
+    "BF": {},
+    "ML": {},
+    "GN": {},
+    "BJ": {},
+    "TG": {},
+    "NE": {},
+    "MR": {},
+    "SL": {
+      "gdp_growth": {
+        "value": 4.29,
+        "year": "2024"
+      }
+    },
+    "LR": {
+      "gdp_growth": {
+        "value": 4.02,
+        "year": "2024"
+      },
+      "inflation": {
+        "value": 8.21,
+        "year": "2024"
+      }
+    },
+    "GW": {
+      "debt_gdp": {
+        "value": null,
+        "year": null
+      }
+    },
+    "GM": {},
+    "CV": {
+      "debt_gdp": {
+        "value": null,
+        "year": null
+      }
+    }
+  },
+  "errors": [
+    "CI/inflation: The read operation timed out",
+    "CI/debt_gdp: The read operation timed out",
+    "NG/gdp_growth: The read operation timed out",
+    "NG/inflation: The read operation timed out",
+    "GH/inflation: The read operation timed out",
+    "GH/debt_gdp: The read operation timed out",
+    "SN/gdp_growth: The read operation timed out",
+    "BF/gdp_growth: The read operation timed out",
+    "BF/inflation: The read operation timed out",
+    "BF/debt_gdp: The read operation timed out",
+    "ML/gdp_growth: The read operation timed out",
+    "ML/inflation: The read operation timed out",
+    "ML/debt_gdp: The read operation timed out",
+    "GN/gdp_growth: The read operation timed out",
+    "GN/inflation: The read operation timed out",
+    "GN/debt_gdp: The read operation timed out",
+    "BJ/gdp_growth: The read operation timed out",
+    "BJ/inflation: The read operation timed out",
+    "BJ/debt_gdp: The read operation timed out",
+    "TG/gdp_growth: The read operation timed out",
+    "TG/inflation: The read operation timed out",
+    "TG/debt_gdp: The read operation timed out",
+    "NE/gdp_growth: The read operation timed out",
+    "NE/inflation: The read operation timed out",
+    "NE/debt_gdp: The read operation timed out",
+    "MR/gdp_growth: The read operation timed out",
+    "MR/inflation: The read operation timed out",
+    "MR/debt_gdp: The read operation timed out",
+    "SL/inflation: The read operation timed out",
+    "SL/debt_gdp: The read operation timed out",
+    "LR/debt_gdp: The read operation timed out",
+    "GW/gdp_growth: The read operation timed out",
+    "GW/inflation: The read operation timed out",
+    "GM/gdp_growth: The read operation timed out",
+    "GM/inflation: The read operation timed out",
+    "GM/debt_gdp: The read operation timed out",
+    "CV/gdp_growth: The read operation timed out",
+    "CV/inflation: The read operation timed out"
+  ]
+}
