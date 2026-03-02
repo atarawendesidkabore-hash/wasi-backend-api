@@ -174,7 +174,8 @@ class USSDMenuEngine:
                 "2. Déclaration commerce\n"
                 "3. Port / Douanes\n"
                 "4. Indice WASI pays\n"
-                "5. Mon compte"
+                "5. Mon compte\n"
+                "6. eCFA Portefeuille"
             )
             session_type = "MENU"
         elif parts[0] == "1":
@@ -196,6 +197,13 @@ class USSDMenuEngine:
         elif parts[0] == "5":
             response, session_type = self._handle_account_menu(
                 parts[1:], phone_hash
+            )
+        elif parts[0] == "6":
+            # eCFA CBDC Wallet — delegates to CbdcUSSDEngine
+            from src.engines.cbdc_ussd_engine import CbdcUSSDEngine
+            ecfa_engine = CbdcUSSDEngine(self.db)
+            response, session_type = ecfa_engine.handle_ecfa_menu(
+                parts[1:], phone_number, country_code
             )
         else:
             response = "END Option invalide. Composez à nouveau *384*WASI#"

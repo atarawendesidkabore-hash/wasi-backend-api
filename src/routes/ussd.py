@@ -75,7 +75,7 @@ def _verify_provider(api_key: str, db: Session) -> USSDProvider:
 @router.post("/callback", response_model=USSDCallbackResponse)
 async def ussd_callback(
     request: USSDCallbackRequest,
-    x_provider_key: Optional[str] = Header(None, alias="X-Provider-Key"),
+    x_provider_key: str = Header(..., alias="X-Provider-Key"),
     db: Session = Depends(get_db),
 ):
     """
@@ -88,10 +88,8 @@ async def ussd_callback(
     No credit cost — this is a data INGESTION endpoint, not a query.
     Authenticated by X-Provider-Key header (MNO partner API key).
     """
-    provider_code = "GENERIC"
-    if x_provider_key:
-        provider = _verify_provider(x_provider_key, db)
-        provider_code = provider.provider_code
+    provider = _verify_provider(x_provider_key, db)
+    provider_code = provider.provider_code
 
     engine = USSDMenuEngine(db)
     response_text, session_type = engine.process_callback(

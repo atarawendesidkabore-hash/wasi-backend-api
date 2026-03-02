@@ -2,54 +2,12 @@
 WASI Backend API — Test Suite
 
 Uses an in-memory SQLite database to isolate tests from the dev database.
-The get_db dependency is overridden so no file is created/modified.
+Shared setup is in conftest.py (DB override, rate limiter disable, seed).
 """
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from src.main import app
-from src.database.models import Base
-from src.database.connection import get_db
-from src.database.seed import seed_countries
-
-# ── In-memory test database ──────────────────────────────────────────────────
-# StaticPool ensures all sessions share the same in-memory SQLite connection,
-# so tables created by create_all() are visible to route handlers.
-
-TEST_DATABASE_URL = "sqlite:///:memory:"
-test_engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-
-
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-
-@pytest.fixture(autouse=True)
-def setup_db():
-    Base.metadata.create_all(bind=test_engine)
-    db = TestingSessionLocal()
-    try:
-        seed_countries(db)
-    finally:
-        db.close()
-    yield
-    Base.metadata.drop_all(bind=test_engine)
-
 
 client = TestClient(app, raise_server_exceptions=False)
 

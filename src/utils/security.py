@@ -68,3 +68,32 @@ async def get_current_user(
             detail="User not found or inactive",
         )
     return user
+
+
+def require_cbdc_role(allowed_wallet_types: list[str]):
+    """FastAPI dependency that checks the user owns a CBDC wallet of the required type.
+
+    Usage:
+        @router.post("/admin/mint")
+        async def mint(
+            ...,
+            _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
+        ):
+    """
+    async def _check_role(
+        current_user=Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ):
+        from src.database.cbdc_models import CbdcWallet
+        wallet = db.query(CbdcWallet).filter(
+            CbdcWallet.user_id == current_user.id,
+            CbdcWallet.wallet_type.in_(allowed_wallet_types),
+            CbdcWallet.status == "active",
+        ).first()
+        if not wallet:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires wallet type: {', '.join(allowed_wallet_types)}",
+            )
+        return wallet
+    return _check_role

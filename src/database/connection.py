@@ -10,7 +10,7 @@ if settings.DATABASE_URL.startswith("sqlite"):
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args=connect_args,
-    echo=settings.DEBUG,
+    echo=False,
 )
 
 if settings.DATABASE_URL.startswith("sqlite"):
@@ -35,4 +35,6 @@ def get_db() -> Generator:
 def init_db():
     from src.database.models import Base  # deferred to avoid circular import
     import src.database.ussd_models  # noqa: register USSD tables with Base metadata
+    import src.database.cbdc_models  # noqa: register eCFA CBDC tables with Base metadata
+    import src.database.cbdc_payment_models  # noqa: register cross-border payment tables
     Base.metadata.create_all(bind=engine)

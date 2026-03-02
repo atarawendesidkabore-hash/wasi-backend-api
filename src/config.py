@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     ACLED_API_KEY: str = ""          # Register free at acleddata.com
     ACLED_EMAIL: str = ""            # Email used for ACLED registration
     COMTRADE_API_KEY: str = ""       # UN Comtrade subscription key (optional)
+    SKIP_SCRAPERS: bool = False      # Skip external API scrapers on startup (fast local dev)
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

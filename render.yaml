@@ -27,6 +27,14 @@ services:
         value: "3.11.11"
       - key: SCHEDULER_ENABLED
         value: "true"
+      - key: ANTHROPIC_API_KEY
+        sync: false  # set manually in Render dashboard (secret)
+      - key: ACLED_API_KEY
+        sync: false  # optional: set in Render dashboard for conflict data
+      - key: ACLED_EMAIL
+        sync: false  # optional: email used for ACLED registration
+      - key: COMTRADE_API_KEY
+        sync: false  # optional: UN Comtrade subscription key
 
   - type: web
     name: wasi-frontend

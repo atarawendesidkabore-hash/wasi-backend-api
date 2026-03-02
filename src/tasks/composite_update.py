@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -8,6 +9,9 @@ from src.engines.composite_engine import CompositeEngine
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Re-entrance guard: prevents concurrent execution of the same scheduled task
+_composite_lock = threading.Lock()
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -25,6 +29,10 @@ async def update_composite_index():
     Fetch the latest country index per country, calculate the WASI composite,
     and upsert the result into the wasi_composites table.
     """
+    if not _composite_lock.acquire(blocking=False):
+        logger.warning("composite_update: previous run still in progress, skipping")
+        return
+
     db: Session = SessionLocal()
     try:
         engine = CompositeEngine()
@@ -100,6 +108,7 @@ async def update_composite_index():
         db.rollback()
     finally:
         db.close()
+        _composite_lock.release()
 
 
 def start_scheduler():
@@ -139,9 +148,94 @@ def start_scheduler():
         misfire_grace_time=300,
     )
 
+    # eCFA CBDC: domestic settlement every 15 minutes
+    from src.tasks.cbdc_settlement_task import (
+        run_domestic_settlement, run_cross_border_settlement,
+        run_monetary_aggregate_snapshot,
+    )
+    _scheduler.add_job(
+        run_domestic_settlement,
+        trigger=IntervalTrigger(minutes=15),
+        id="ecfa_domestic_settlement",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+
+    # eCFA CBDC: cross-border settlement every 4 hours
+    _scheduler.add_job(
+        run_cross_border_settlement,
+        trigger=IntervalTrigger(hours=4),
+        id="ecfa_cross_border_settlement",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # eCFA CBDC: AML compliance sweep every hour
+    from src.tasks.cbdc_compliance_task import run_aml_sweep
+    _scheduler.add_job(
+        run_aml_sweep,
+        trigger=IntervalTrigger(hours=1),
+        id="ecfa_aml_sweep",
+        replace_existing=True,
+        misfire_grace_time=120,
+    )
+
+    # eCFA CBDC: monetary aggregate snapshot daily at 23:55 UTC
+    from apscheduler.triggers.cron import CronTrigger
+    _scheduler.add_job(
+        run_monetary_aggregate_snapshot,
+        trigger=CronTrigger(hour=23, minute=55),
+        id="ecfa_monetary_aggregates",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
+    # eCFA CBDC: daily interest accrual & demurrage at 00:05 UTC
+    from src.tasks.cbdc_monetary_policy_task import (
+        run_daily_interest_accrual,
+        run_reserve_requirement_check,
+        run_facility_maturation,
+    )
+    _scheduler.add_job(
+        run_daily_interest_accrual,
+        trigger=CronTrigger(hour=0, minute=5),
+        id="ecfa_daily_interest",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
+    # eCFA CBDC: reserve requirement check daily at 06:00 UTC
+    _scheduler.add_job(
+        run_reserve_requirement_check,
+        trigger=CronTrigger(hour=6, minute=0),
+        id="ecfa_reserve_check",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
+    # eCFA CBDC: mature standing facilities every hour
+    _scheduler.add_job(
+        run_facility_maturation,
+        trigger=IntervalTrigger(hours=1),
+        id="ecfa_facility_maturation",
+        replace_existing=True,
+        misfire_grace_time=120,
+    )
+
+    # WASI-Pay: FX rate refresh every 6 hours
+    from src.tasks.fx_rate_update import run_fx_rate_update
+    _scheduler.add_job(
+        run_fx_rate_update,
+        trigger=IntervalTrigger(hours=6),
+        id="fx_rate_update",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
     _scheduler.start()
     logger.info(
-        "Scheduler started: composite update every %dh, news sweep every 1h, USSD aggregation every 4h",
+        "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
+        "AML 1h, interest daily, reserves daily, facilities 1h, FX rates 6h",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )
 

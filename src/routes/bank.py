@@ -9,9 +9,11 @@ Endpoint credit costs:
   POST /loan-advisory                  — 5 credits
   POST /score-dossier                  — 10 credits
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from datetime import date, datetime
 from typing import Optional
 import json
@@ -27,6 +29,7 @@ from src.utils.credits import deduct_credits
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v2/bank", tags=["Bank"])
+limiter = Limiter(key_func=get_remote_address)
 
 # ── Static political risk table (0–10, lower = more stable) ──────────────────
 POLITICAL_RISK: dict = {
@@ -35,6 +38,21 @@ POLITICAL_RISK: dict = {
     "TG": 5.5, "NE": 8.0, "MR": 6.0, "GW": 7.5,
     "SL": 5.5, "LR": 5.5, "GM": 4.5, "CV": 2.5,
 }
+
+# WASI v3.0 ECOWAS country set — only these are valid for bank scoring
+VALID_WASI_COUNTRIES: set = set(POLITICAL_RISK.keys())
+
+
+def _validate_wasi_country(country_code: str) -> str:
+    """Validate and normalize country code. Raises 422 if not in WASI v3.0 set."""
+    code = country_code.upper()
+    if code not in VALID_WASI_COUNTRIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Country '{country_code}' is not in the WASI v3.0 ECOWAS set. "
+                   f"Valid codes: {', '.join(sorted(VALID_WASI_COUNTRIES))}",
+        )
+    return code
 
 # Risk rating thresholds
 RATING_THRESHOLDS = [
@@ -173,7 +191,7 @@ def _score_dossier(
         .order_by(CountryIndex.period_date.desc())
         .first()
     )
-    if latest_idx and latest_idx.index_value:
+    if latest_idx and latest_idx.index_value is not None:
         wasi_pts = (latest_idx.index_value / 100.0) * 40.0
     else:
         wasi_pts = 30.0  # ECOWAS median (~75/100 WASI) when no data
@@ -188,7 +206,7 @@ def _score_dossier(
     if trade_rows:
         total_balance = sum(r.trade_balance_usd for r in trade_rows if r.trade_balance_usd)
         # Positive surplus → full 20 pts; negative deficit → 0 pts; scaled
-        max_balance = 30_000_000_000   # $30B reference
+        max_balance = 100_000_000_000  # $100B reference (scaled for ECOWAS, NG alone ~$200B)
         trade_pts = max(0.0, min(20.0, (total_balance / max_balance) * 20.0 + 10.0))
     else:
         trade_pts = 12.0  # ECOWAS median (slight deficit) when no trade data
@@ -263,13 +281,13 @@ def _score_dossier(
         "bank_review_required": True,
         # COBOL-compatible record (fixed-width numeric fields, YYYYMMDD dates)
         "cobol_record": {
-            "SCORE_9V2":     f"{int(overall * 100):09d}",    # PIC 9(7)V99 COMP
-            "RATING_X5":     f"{rating:<5}",                  # PIC X(5)
-            "MAX_LOAN_15V2": f"{int(_max_recommended_usd(overall, loan_amount_usd)):015d}",
-            "PREMIUM_4":     f"{_rate_premium_bps(rating):04d}",   # PIC 9(4)
-            "WACC_6V2":      f"{int(wacc_data['wacc_pct'] * 100):06d}",  # PIC 9(4)V99
-            "CALC_DATE_8":   date.today().strftime("%Y%m%d"),      # PIC 9(8)
-            "REVIEW_FLAG_1": "Y",                              # PIC X(1)
+            "SCORE_9V2":     f"{min(int(overall * 100), 999_999_999):09d}",      # PIC 9(7)V99
+            "RATING_X5":     f"{rating:<5}",                                      # PIC X(5)
+            "MAX_LOAN_15V2": f"{min(int(_max_recommended_usd(overall, loan_amount_usd)), 999_999_999_999_999):015d}",
+            "PREMIUM_4":     f"{_rate_premium_bps(rating):04d}",                  # PIC 9(4)
+            "WACC_6V2":      f"{min(int(wacc_data['wacc_pct'] * 100), 999_999):06d}",  # PIC 9(4)V99
+            "CALC_DATE_8":   date.today().strftime("%Y%m%d"),                     # PIC 9(8)
+            "REVIEW_FLAG_1": "Y",                                                 # PIC X(1)
         },
     }
 
@@ -278,23 +296,25 @@ def _score_dossier(
 
 class DossierRequest(BaseModel):
     country_code: str = Field(..., min_length=2, max_length=2, description="ISO-2 country code")
-    sector: str = Field(..., description="e.g. agriculture, logistics, mining, manufacturing")
-    loan_amount_usd: float = Field(..., gt=0, description="Requested loan amount in USD")
+    sector: str = Field(..., max_length=50, description="e.g. agriculture, logistics, mining, manufacturing")
+    loan_amount_usd: float = Field(..., gt=0, le=1_000_000_000, description="Requested loan amount in USD (max $1B)")
     loan_term_months: int = Field(..., ge=1, le=360, description="Loan term in months")
     collateral_type: Optional[str] = Field(None, description="e.g. real_estate, receivables, inventory")
 
 
 class LoanAdvisoryRequest(BaseModel):
     country_code: str = Field(..., min_length=2, max_length=2)
-    sector: str
-    loan_amount_usd: float = Field(..., gt=0)
+    sector: str = Field(..., max_length=50)
+    loan_amount_usd: float = Field(..., gt=0, le=1_000_000_000)
     loan_term_months: int = Field(..., ge=1, le=360)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/credit-context/{country_code}")
+@limiter.limit("20/minute")
 async def get_credit_context(
+    request: Request,
     country_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -303,9 +323,10 @@ async def get_credit_context(
     Credit context for a country: WASI score, trade balance, procurement metrics,
     top bilateral trade partners. 3 credits.
     """
-    deduct_credits(current_user, db, f"/api/v2/bank/credit-context/{country_code}", cost_multiplier=3.0)
+    cc = _validate_wasi_country(country_code)
+    deduct_credits(current_user, db, f"/api/v2/bank/credit-context/{cc}", cost_multiplier=3.0)
 
-    country = db.query(Country).filter(Country.code == country_code.upper()).first()
+    country = db.query(Country).filter(Country.code == cc).first()
     if not country:
         raise HTTPException(status_code=404, detail=f"Country '{country_code}' not found")
 
@@ -391,7 +412,9 @@ async def get_credit_context(
 
 
 @router.post("/loan-advisory")
+@limiter.limit("10/minute")
 async def get_loan_advisory(
+    request: Request,
     req: LoanAdvisoryRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -400,9 +423,10 @@ async def get_loan_advisory(
     Loan advisory narrative without full dossier scoring. 5 credits.
     Returns risk factors, regional comparison, and indicative rate premium.
     """
+    cc = _validate_wasi_country(req.country_code)
     deduct_credits(current_user, db, "/api/v2/bank/loan-advisory", cost_multiplier=5.0)
 
-    country = db.query(Country).filter(Country.code == req.country_code.upper()).first()
+    country = db.query(Country).filter(Country.code == cc).first()
     if not country:
         raise HTTPException(status_code=404, detail=f"Country '{req.country_code}' not found")
 
@@ -447,7 +471,9 @@ async def get_loan_advisory(
 
 
 @router.post("/score-dossier")
+@limiter.limit("5/minute")
 async def score_dossier(
+    request: Request,
     req: DossierRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -456,9 +482,10 @@ async def score_dossier(
     Full credit dossier scoring with COBOL-compatible output. 10 credits.
     Stores result in bank_dossier_scores table.
     """
+    cc = _validate_wasi_country(req.country_code)
     deduct_credits(current_user, db, "/api/v2/bank/score-dossier", cost_multiplier=10.0)
 
-    country = db.query(Country).filter(Country.code == req.country_code.upper()).first()
+    country = db.query(Country).filter(Country.code == cc).first()
     if not country:
         raise HTTPException(status_code=404, detail=f"Country '{req.country_code}' not found")
 
@@ -655,9 +682,9 @@ async def get_corridor_status(
         a["severity"] == "CRITICAL" or a["event_type"] == "ROAD_CORRIDOR_BLOCKED"
         for a in active_alerts
     )
-    if road_index is not None and road_index < 40 or has_critical:
+    if (road_index is not None and road_index < 40) or has_critical:
         status = "RED"
-    elif road_index is not None and road_index < 60 or active_alerts:
+    elif (road_index is not None and road_index < 60) or active_alerts:
         status = "AMBER"
     else:
         status = "GREEN"
