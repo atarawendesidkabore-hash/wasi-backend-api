@@ -33,10 +33,10 @@ VALID_HISTORY_DAYS = {7, 14, 30, 60, 90}
 def list_corridors(
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """List all corridors with latest assessment scores."""
-    deduct_credits(db, user, 2)
+    deduct_credits(current_user, db, "/api/v3/corridors/", "GET", 2.0)
     engine = CorridorIntelligenceEngine(db)
     result = engine.assess_all_corridors()
     db.commit()
@@ -52,12 +52,11 @@ def list_corridors(
 def corridor_dashboard(
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """ECOWAS corridor dashboard with aggregate statistics."""
-    deduct_credits(db, user, 5)
+    deduct_credits(current_user, db, "/api/v3/corridors/dashboard", "GET", 5.0)
     engine = CorridorIntelligenceEngine(db)
-    # Ensure assessments exist
     engine.assess_all_corridors()
     db.commit()
     return engine.get_ecowas_corridor_dashboard()
@@ -68,12 +67,11 @@ def corridor_dashboard(
 def corridor_ranking(
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Corridors ranked by composite score (best first)."""
-    deduct_credits(db, user, 3)
+    deduct_credits(current_user, db, "/api/v3/corridors/ranking", "GET", 3.0)
     engine = CorridorIntelligenceEngine(db)
-    # Ensure assessments exist
     engine.assess_all_corridors()
     db.commit()
     rankings = engine.get_corridor_ranking()
@@ -89,10 +87,10 @@ def corridor_comparison(
     codes: str = Query(..., description="Comma-separated corridor codes"),
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Side-by-side comparison of selected corridors."""
-    deduct_credits(db, user, 3)
+    deduct_credits(current_user, db, "/api/v3/corridors/compare", "GET", 3.0)
     code_list = [c.strip().upper() for c in codes.split(",") if c.strip()]
     if len(code_list) < 2:
         raise HTTPException(400, "Provide at least 2 corridor codes separated by commas")
@@ -112,10 +110,10 @@ def corridor_comparison(
 def refresh_corridors(
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Trigger full reassessment of all corridors."""
-    deduct_credits(db, user, 10)
+    deduct_credits(current_user, db, "/api/v3/corridors/refresh", "POST", 10.0)
     engine = CorridorIntelligenceEngine(db)
     result = engine.assess_all_corridors()
     db.commit()
@@ -133,11 +131,11 @@ def corridor_detail(
     corridor_code: str,
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Full corridor assessment with sub-score breakdown."""
-    deduct_credits(db, user, 2)
     code = corridor_code.strip().upper()
+    deduct_credits(current_user, db, f"/api/v3/corridors/{code}", "GET", 2.0)
     corridor = db.query(TradeCorridor).filter(TradeCorridor.corridor_code == code).first()
     if not corridor:
         raise HTTPException(404, f"Corridor '{code}' not found")
@@ -154,14 +152,13 @@ def corridor_bottleneck(
     corridor_code: str,
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Bottleneck analysis with recommendations."""
-    deduct_credits(db, user, 3)
     code = corridor_code.strip().upper()
+    deduct_credits(current_user, db, f"/api/v3/corridors/{code}/bottleneck", "GET", 3.0)
 
     engine = CorridorIntelligenceEngine(db)
-    # Ensure assessment exists
     engine.assess_corridor(code)
     db.commit()
     result = engine.get_bottleneck_analysis(code)
@@ -177,14 +174,14 @@ def corridor_history(
     days: int = Query(default=30),
     request=None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Assessment history for a corridor."""
-    deduct_credits(db, user, 3)
+    code = corridor_code.strip().upper()
+    deduct_credits(current_user, db, f"/api/v3/corridors/{code}/history", "GET", 3.0)
     if days not in VALID_HISTORY_DAYS:
         raise HTTPException(400, f"days must be one of {sorted(VALID_HISTORY_DAYS)}")
 
-    code = corridor_code.strip().upper()
     engine = CorridorIntelligenceEngine(db)
     result = engine.get_corridor_history(code, days)
     if not result:
