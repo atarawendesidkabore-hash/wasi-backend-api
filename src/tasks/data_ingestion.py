@@ -29,6 +29,17 @@ def ingest_csv_file(filepath: str, db: Session) -> int:
         logger.error("Failed to read CSV %s: %s", filepath, exc)
         return 0
 
+    # Skip CSVs that don't have the required columns
+    required_cols = {"date", "country_code"}
+    if not required_cols.issubset(set(df.columns)):
+        logger.info(
+            "Skipping %s — missing required columns (has: %s, needs: %s)",
+            os.path.basename(filepath),
+            list(df.columns),
+            required_cols,
+        )
+        return 0
+
     inserted = 0
     for _, row in df.iterrows():
         country_code = str(row.get("country_code", "")).strip().upper()

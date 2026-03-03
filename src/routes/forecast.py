@@ -6,6 +6,7 @@ Serves cached forecast results from the forecast_results table.
 Falls back to live computation if no cached result exists.
 """
 import asyncio
+import logging
 from datetime import timezone, date, datetime, timedelta
 from typing import Optional
 
@@ -27,6 +28,8 @@ from src.schemas.forecast import (
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 from src.tasks.forecast_task import run_forecast_update, _persist_forecast
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v3/forecast", tags=["Forecast"])
 
@@ -413,8 +416,11 @@ async def forecast_stock_market(
             .order_by(StockMarketData.period_date.asc())
             .all()
         )
-    except Exception:
+    except ImportError:
         raise HTTPException(status_code=404, detail="Stock market data not available")
+    except Exception as exc:
+        logger.error("Stock market query failed for %s: %s", code, exc)
+        raise HTTPException(status_code=500, detail="Stock market data query failed")
 
     if len(rows) < 3:
         raise HTTPException(status_code=404, detail=f"Insufficient stock data for {code}")
@@ -473,8 +479,11 @@ async def forecast_ecfa_monetary(
             .order_by(CbdcMonetaryAggregate.snapshot_date.asc())
             .all()
         )
-    except Exception:
+    except ImportError:
         raise HTTPException(status_code=404, detail="eCFA monetary data not available")
+    except Exception as exc:
+        logger.error("eCFA monetary query failed for %s/%s: %s", cc, agg, exc)
+        raise HTTPException(status_code=500, detail="eCFA monetary data query failed")
 
     col = AGGREGATE_COLUMN[agg]
     values = [getattr(r, col) for r in rows if getattr(r, col, None) is not None]

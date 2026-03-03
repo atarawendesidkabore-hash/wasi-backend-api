@@ -13,10 +13,13 @@ Credit costs:
   GET  /fx/rates/{pair} — 1 credit   (specific rate)
   POST /fx/rates/update — 10 credits (admin rate update)
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+logger = logging.getLogger(__name__)
 
 from src.database.connection import get_db
 from src.database.models import User
@@ -286,8 +289,8 @@ async def update_fx_rate(
                 )
     except HTTPException:
         raise
-    except Exception:
-        pass  # No existing rate — allow initial set
+    except Exception as exc:
+        logger.debug("No existing FX rate for %s — allowing initial set: %s", body.target_currency, exc)
 
     result = fx_engine.update_rate(
         target_currency=body.target_currency,

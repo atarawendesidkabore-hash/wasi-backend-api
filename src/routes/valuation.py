@@ -19,6 +19,7 @@ Endpoint credit costs:
   GET  /sensitivity/{result_id}         — 3 credits
 """
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -42,6 +43,7 @@ from src.schemas.valuation import (
     FCFProjectionPeriod, TerminalValueResult, SensitivityCell,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v3/valuation", tags=["Valuation"])
 limiter = Limiter(key_func=get_remote_address)
 _engine = ValuationEngine()
@@ -508,8 +510,10 @@ async def run_valuation(
         risk_engine = RiskEngine(db)
         risk_result = risk_engine.score_country(cc)
         risk_score = risk_result.get("composite_score")
-    except Exception:
-        pass
+    except ImportError:
+        pass  # RiskEngine not available — proceed without risk score
+    except Exception as exc:
+        logger.warning("Risk score calculation failed for %s: %s", cc, exc)
 
     # Narrative
     narrative = _engine.generate_narrative(
