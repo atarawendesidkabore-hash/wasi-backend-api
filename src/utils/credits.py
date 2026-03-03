@@ -1,5 +1,6 @@
 import uuid
 from fastapi import HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.database.models import User, X402Transaction, QueryLog
 from src.config import settings
@@ -18,6 +19,10 @@ def deduct_credits(
     Returns the cost deducted.
 
     Free-tier users (query_cost == 0.0) are not charged.
+
+    Uses an atomic UPDATE ... WHERE balance >= cost to prevent
+    race conditions on both PostgreSQL and SQLite (where
+    SELECT ... FOR UPDATE is silently ignored).
     """
     cost = settings.DEFAULT_QUERY_COST * cost_multiplier
 
@@ -32,35 +37,46 @@ def deduct_credits(
         _log_query(db, user.id, endpoint, method, 0.0)
         return 0.0
 
-    # Lock the user row to prevent concurrent deductions (race condition fix)
-    locked_user = db.query(User).filter(User.id == user.id).with_for_update().first()
-    if not locked_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
+    # Atomic deduction: UPDATE only succeeds if balance is sufficient.
+    # This is race-condition safe on both PostgreSQL and SQLite.
+    result = db.execute(
+        text(
+            "UPDATE users SET x402_balance = x402_balance - :cost "
+            "WHERE id = :uid AND x402_balance >= :cost"
+        ),
+        {"cost": cost, "uid": user.id},
+    )
 
-    if locked_user.x402_balance < cost:
+    if result.rowcount == 0:
+        # Either user doesn't exist or balance is insufficient
+        current = db.query(User).filter(User.id == user.id).first()
+        if not current:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="Insufficient x402 balance",
         )
 
-    balance_before = locked_user.x402_balance
-    locked_user.x402_balance -= cost
+    # Re-read the updated balance for the transaction log
+    db.refresh(user)
+    balance_after = user.x402_balance
+    balance_before = balance_after + cost
 
     tx = X402Transaction(
-        user_id=locked_user.id,
+        user_id=user.id,
         transaction_type="deduct",
         amount=cost,
         balance_before=balance_before,
-        balance_after=locked_user.x402_balance,
+        balance_after=balance_after,
         reference_id=f"query-{uuid.uuid4().hex[:16]}",
         description=f"Query: {method} {endpoint}",
         status="completed",
     )
     db.add(tx)
-    _log_query(db, locked_user.id, endpoint, method, cost)
+    _log_query(db, user.id, endpoint, method, cost)
     db.commit()
     db.refresh(user)
     return cost

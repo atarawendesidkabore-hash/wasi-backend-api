@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, date
+from datetime import timezone, datetime, date
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -184,7 +184,7 @@ def run_commodity_scraper(db: Session = None) -> Dict:
                 existing.price_usd        = latest["price"]
                 existing.pct_change_mom   = mom
                 existing.pct_change_yoy   = yoy
-                existing.fetched_at       = datetime.utcnow()
+                existing.fetched_at       = datetime.now(timezone.utc)
                 summary["updated"] += 1
             else:
                 db.add(CommodityPrice(

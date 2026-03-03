@@ -10,7 +10,7 @@ Computes and caches forecasts for all targets:
 """
 import logging
 import threading
-from datetime import datetime, date
+from datetime import timezone, datetime, date
 
 from src.database.connection import SessionLocal
 from src.database.models import Country, CountryIndex, WASIComposite, CommodityPrice, MacroIndicator
@@ -34,7 +34,7 @@ async def run_forecast_update(db=None):
 
     try:
         engine = ForecastEngine()
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         stats = {
             "country_forecasts": 0,
             "composite_computed": False,
@@ -132,7 +132,7 @@ async def run_forecast_update(db=None):
                     stats["macro"] += 1
 
         db.commit()
-        elapsed = (datetime.utcnow() - start).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - start).total_seconds()
 
         logger.info(
             "forecast_update: countries=%d composite=%s commodities=%d macro=%d (%.1fs)",
@@ -147,7 +147,7 @@ async def run_forecast_update(db=None):
             "commodities_computed": stats["commodities"],
             "macro_computed": stats["macro"],
             "duration_seconds": round(elapsed, 2),
-            "computed_at": datetime.utcnow(),
+            "computed_at": datetime.now(timezone.utc),
         }
 
     except Exception as exc:
@@ -207,7 +207,7 @@ def _persist_forecast(db, result: dict, horizon: int):
             existing.confidence = result.get("confidence_score", 1.0)
             existing.last_actual_date = last_actual
             existing.last_actual_value = result.get("last_actual_value")
-            existing.calculated_at = datetime.utcnow()
+            existing.calculated_at = datetime.now(timezone.utc)
         else:
             db.add(ForecastResult(
                 target_type=target_type,
@@ -226,5 +226,5 @@ def _persist_forecast(db, result: dict, horizon: int):
                 confidence=result.get("confidence_score", 1.0),
                 last_actual_date=last_actual,
                 last_actual_value=result.get("last_actual_value"),
-                calculated_at=datetime.utcnow(),
+                calculated_at=datetime.now(timezone.utc),
             ))

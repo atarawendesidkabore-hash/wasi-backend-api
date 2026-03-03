@@ -9,7 +9,7 @@ from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Date,
     UniqueConstraint,
 )
-from datetime import datetime
+from datetime import timezone, datetime
 from src.database.models import Base
 
 
@@ -45,7 +45,7 @@ class ForecastResult(Base):
     last_actual_value = Column(Float)
 
     # Metadata
-    calculated_at = Column(DateTime, default=datetime.utcnow)
+    calculated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     engine_version = Column(String(10), default="1.0")
 
     __table_args__ = (

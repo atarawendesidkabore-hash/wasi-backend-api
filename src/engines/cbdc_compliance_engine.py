@@ -24,7 +24,7 @@ Informations Financières) — the WAEMU Financial Intelligence Unit.
 import json
 import uuid
 import logging
-from datetime import datetime, timedelta
+from datetime import timezone, datetime, timedelta
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -132,7 +132,7 @@ class CbdcComplianceEngine:
 
         Returns summary of alerts generated.
         """
-        cutoff = datetime.utcnow() - timedelta(hours=1)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
         recent_wallets = self.db.query(CbdcTransaction.sender_wallet_id).filter(
             CbdcTransaction.initiated_at >= cutoff
         ).distinct().all()
@@ -151,7 +151,7 @@ class CbdcComplianceEngine:
         return {
             "wallets_scanned": wallets_scanned,
             "alerts_generated": total_alerts,
-            "sweep_time": datetime.utcnow().isoformat(),
+            "sweep_time": datetime.now(timezone.utc).isoformat(),
         }
 
     # ------------------------------------------------------------------
@@ -161,7 +161,7 @@ class CbdcComplianceEngine:
     def _check_velocity(self, wallet_id: str,
                         tx_id: str | None) -> list[dict]:
         """VELOCITY: >20 transactions in 1 hour."""
-        cutoff = datetime.utcnow() - timedelta(hours=1)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
         count = self.db.query(CbdcTransaction).filter(
             CbdcTransaction.sender_wallet_id == wallet_id,
             CbdcTransaction.initiated_at >= cutoff,
@@ -182,7 +182,7 @@ class CbdcComplianceEngine:
     def _check_structuring(self, wallet_id: str,
                            tx_id: str | None) -> list[dict]:
         """STRUCTURING: Multiple transactions just below SAR threshold in 24h."""
-        cutoff = datetime.utcnow() - timedelta(hours=STRUCTURING_WINDOW_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=STRUCTURING_WINDOW_HOURS)
         near_threshold = SAR_THRESHOLD_XOF * STRUCTURING_THRESHOLD_RATIO
 
         count = self.db.query(CbdcTransaction).filter(
@@ -214,7 +214,7 @@ class CbdcComplianceEngine:
     def _check_round_trip(self, wallet_id: str,
                           tx_id: str | None) -> list[dict]:
         """ROUND_TRIP: Funds returning to origin within 48h."""
-        cutoff = datetime.utcnow() - timedelta(hours=ROUND_TRIP_WINDOW_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=ROUND_TRIP_WINDOW_HOURS)
 
         # Find wallets this wallet sent to
         sent_to = self.db.query(CbdcTransaction.receiver_wallet_id).filter(
@@ -253,7 +253,7 @@ class CbdcComplianceEngine:
     def _check_smurfing(self, wallet_id: str,
                         tx_id: str | None) -> list[dict]:
         """SMURFING: Many small incoming followed by single large outgoing."""
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
         # Count small incoming transactions
         small_incoming = self.db.query(CbdcTransaction).filter(
@@ -300,7 +300,7 @@ class CbdcComplianceEngine:
             return []
 
         # Check if this is the first activity after a dormancy period
-        days_inactive = (datetime.utcnow() - wallet.last_activity_at).days
+        days_inactive = (datetime.now(timezone.utc) - wallet.last_activity_at).days
         if days_inactive > DORMANT_DAYS:
             alert = self._create_alert(
                 wallet_id=wallet_id,
@@ -325,7 +325,7 @@ class CbdcComplianceEngine:
         if not wallet or wallet.kyc_tier >= 2:
             return []
 
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         cross_border_total = self.db.query(
             func.coalesce(func.sum(CbdcTransaction.amount_ecfa), 0.0)
         ).filter(

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, date, timedelta
+from datetime import timezone, datetime, date, timedelta
 from typing import Dict, Any, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -413,7 +413,7 @@ class USSDMenuEngine:
                 )
                 return (
                     f"END Déclaration enregistrée!\n"
-                    f"Réf: WASI-{datetime.utcnow().strftime('%Y%m%d%H%M')}\n"
+                    f"Réf: WASI-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}\n"
                     f"Merci pour votre contribution."
                 ), "TRADE_DECLARATION"
             else:
@@ -982,8 +982,8 @@ class USSDMenuEngine:
             user_input=kwargs["user_input"],
             response_text=kwargs["response_text"][:500],
             status=kwargs["status"],
-            started_at=datetime.utcnow(),
-            ended_at=datetime.utcnow() if kwargs["status"] == "completed" else None,
+            started_at=datetime.now(timezone.utc),
+            ended_at=datetime.now(timezone.utc) if kwargs["status"] == "completed" else None,
         )
         self.db.add(session)
         self.db.commit()
@@ -1236,7 +1236,7 @@ class USSDDataAggregator:
             existing.data_points_count = data_points
             existing.providers_reporting = providers
             existing.confidence = confidence
-            existing.calculated_at = datetime.utcnow()
+            existing.calculated_at = datetime.now(timezone.utc)
         else:
             agg = USSDDailyAggregate(
                 country_id=country.id,

@@ -12,7 +12,7 @@ All endpoints require authentication and consume credits.
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import datetime
+from datetime import timezone, datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
@@ -133,7 +133,7 @@ async def get_wasi_countries_by_partner(
         country_count=len(entries),
         total_trade_volume_usd=total_volume,
         entries=entries,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
     )
 
 
@@ -196,7 +196,7 @@ async def get_country_trade_partners(
         partner_count=len(partners),
         total_trade_volume_usd=sum(p.total_trade_usd for p in partners),
         partners=partners,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
     )
 
 
@@ -241,7 +241,7 @@ async def get_trade_leaderboard(
     return TradeLeaderboard(
         year=year,
         top_relationships=relationships,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
     )
 
 
@@ -294,5 +294,5 @@ async def get_trade_summary(
         "overall_trade_balance_usd": total_exports - total_imports,
         "records_count": len(rows),
         "top_10_partners": top_partners,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }

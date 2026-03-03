@@ -12,7 +12,7 @@ Record layouts follow PIC notation:
 Settlement record: 200 chars fixed width
 Transaction record: 150 chars fixed width
 """
-from datetime import datetime
+from datetime import timezone, datetime
 
 
 def format_settlement_cobol(settlement: dict) -> str:
@@ -49,15 +49,15 @@ def format_settlement_cobol(settlement: dict) -> str:
     txn_count = f"{settlement.get('transaction_count', 0):07d}"
     countries = str(settlement.get("country_codes", ""))[:10].ljust(10)
 
-    ws = settlement.get("window_start", datetime.utcnow())
-    we = settlement.get("window_end", datetime.utcnow())
+    ws = settlement.get("window_start", datetime.now(timezone.utc))
+    we = settlement.get("window_end", datetime.now(timezone.utc))
     ws_s = ws.strftime("%Y%m%d") if isinstance(ws, datetime) else str(ws)[:8].ljust(8)
     we_s = we.strftime("%Y%m%d") if isinstance(we, datetime) else str(we)[:8].ljust(8)
 
     status = str(settlement.get("status", ""))[:10].ljust(10)
     star_ref = str(settlement.get("star_uemoa_ref", ""))[:20].ljust(20)
 
-    settle_date = datetime.utcnow().strftime("%Y%m%d")
+    settle_date = datetime.now(timezone.utc).strftime("%Y%m%d")
     filler = " " * 49
 
     record = (
@@ -98,7 +98,7 @@ def format_transaction_cobol(tx: dict) -> str:
     sender_cc = str(tx.get("sender_country", ""))[:10].ljust(10)
     receiver_cc = str(tx.get("receiver_country", ""))[:10].ljust(10)
 
-    ts = tx.get("initiated_at", datetime.utcnow())
+    ts = tx.get("initiated_at", datetime.now(timezone.utc))
     if isinstance(ts, datetime):
         tx_date = ts.strftime("%Y%m%d")
         tx_time = ts.strftime("%H%M%S")

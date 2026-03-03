@@ -12,7 +12,7 @@ Covers:
 import pytest
 import uuid
 import json
-from datetime import datetime, date, timedelta
+from datetime import timezone, datetime, date, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -277,7 +277,7 @@ class TestStandingFacilities:
         facility = db.query(CbdcStandingFacility).filter(
             CbdcStandingFacility.status == "active"
         ).first()
-        facility.matures_at = datetime.utcnow() - timedelta(hours=1)
+        facility.matures_at = datetime.now(timezone.utc) - timedelta(hours=1)
         db.commit()
 
         result = engine.mature_facilities()
@@ -338,7 +338,7 @@ class TestInterestDemurrage:
             }),
             wallet_types="RETAIL",
             is_active=True,
-            effective_from=datetime.utcnow() - timedelta(days=1),
+            effective_from=datetime.now(timezone.utc) - timedelta(days=1),
             created_by="admin",
         )
         db.add(policy)
@@ -370,7 +370,7 @@ class TestInterestDemurrage:
             }),
             wallet_types="RETAIL",
             is_active=True,
-            effective_from=datetime.utcnow() - timedelta(days=1),
+            effective_from=datetime.now(timezone.utc) - timedelta(days=1),
             created_by="admin",
         )
         db.add(policy)
@@ -526,7 +526,7 @@ class TestFacilityLedgerIntegrity:
             }),
             wallet_types="RETAIL",
             is_active=True,
-            effective_from=datetime.utcnow() - timedelta(days=1),
+            effective_from=datetime.now(timezone.utc) - timedelta(days=1),
             created_by="admin",
         )
         db.add(policy)

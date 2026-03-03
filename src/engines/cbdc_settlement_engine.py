@@ -12,7 +12,7 @@ STAR-UEMOA integration: generates RTGS instruction messages in BCEAO format.
 """
 import uuid
 import logging
-from datetime import datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from collections import defaultdict
 
 from sqlalchemy.orm import Session
@@ -38,7 +38,7 @@ class CbdcSettlementEngine:
         Groups all completed transactions by (sender_bank, receiver_bank) pair,
         computes net position, and creates settlement records.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         window_start = now - timedelta(minutes=window_minutes)
 
         # Find unsettled domestic transactions between bank wallets
@@ -126,7 +126,7 @@ class CbdcSettlementEngine:
 
     def run_cross_border_settlement(self) -> dict:
         """Run cross-border WAEMU inter-country netting (every 4 hours)."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         window_start = now - timedelta(hours=4)
 
         txs = self.db.query(CbdcTransaction).filter(

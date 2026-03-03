@@ -13,7 +13,7 @@ arrives in real-time and captures intra-day economic activity.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import timezone, date, datetime
 
 from src.database.connection import SessionLocal
 from src.engines.ussd_engine import USSDDataAggregator
@@ -68,7 +68,7 @@ def run_ussd_aggregation(db=None) -> dict:
                 "countries_processed": 0,
                 "countries_with_data": 0,
                 "total_data_points": 0,
-                "computed_at": datetime.utcnow().isoformat(),
+                "computed_at": datetime.now(timezone.utc).isoformat(),
             }
 
         total_countries_with_data = 0
@@ -96,7 +96,7 @@ def run_ussd_aggregation(db=None) -> dict:
             "countries_processed": total_countries_processed,
             "countries_with_data": total_countries_with_data,
             "total_data_points": total_data_points,
-            "computed_at": datetime.utcnow().isoformat(),
+            "computed_at": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as exc:
@@ -104,7 +104,7 @@ def run_ussd_aggregation(db=None) -> dict:
         return {
             "status": "error",
             "error": str(exc),
-            "computed_at": datetime.utcnow().isoformat(),
+            "computed_at": datetime.now(timezone.utc).isoformat(),
         }
     finally:
         if own_session:

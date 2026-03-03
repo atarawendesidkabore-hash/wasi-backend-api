@@ -7,11 +7,11 @@ Three models for the payment interoperability layer:
   3. CbdcFxPosition — Net exposure tracking per currency
 """
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Boolean, Text,
+    Column, Integer, String, Float, Numeric, DateTime, Boolean, Text,
     ForeignKey,
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import timezone, datetime
 from src.database.models import Base
 
 
@@ -42,19 +42,19 @@ class CbdcCrossBorderPayment(Base):
     receiver_country = Column(String(2), nullable=False, index=True)
 
     # Amounts
-    amount_source = Column(Float, nullable=False)
+    amount_source = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     source_currency = Column(String(5), nullable=False)
-    amount_target = Column(Float, nullable=True)
+    amount_target = Column(Numeric(18, 2, asdecimal=False), nullable=True)
     target_currency = Column(String(5), nullable=False)
 
     # FX details
-    fx_rate_applied = Column(Float, nullable=True)
+    fx_rate_applied = Column(Numeric(12, 6, asdecimal=False), nullable=True)
     fx_spread_applied = Column(Float, nullable=True)
 
     # Fees
-    platform_fee_ecfa = Column(Float, default=0.0)
-    rail_fee_ecfa = Column(Float, default=0.0)
-    total_cost_ecfa = Column(Float, default=0.0)
+    platform_fee_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    rail_fee_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_cost_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Status
     status = Column(String(20), nullable=False, default="INITIATED", index=True)
@@ -89,8 +89,8 @@ class CbdcCrossBorderPayment(Base):
     failure_reason = Column(String(500), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     settled_at = Column(DateTime, nullable=True)
 
     sender_wallet = relationship("CbdcWallet", foreign_keys=[sender_wallet_id])
@@ -107,18 +107,18 @@ class CbdcRateLock(Base):
 
     base_currency = Column(String(5), nullable=False, default="XOF")
     target_currency = Column(String(5), nullable=False, index=True)
-    rate = Column(Float, nullable=False)
-    inverse_rate = Column(Float, nullable=False)
+    rate = Column(Numeric(12, 6, asdecimal=False), nullable=False)
+    inverse_rate = Column(Numeric(12, 6, asdecimal=False), nullable=False)
     spread_percent = Column(Float, nullable=False)
 
-    locked_amount_ecfa = Column(Float, nullable=False)
+    locked_amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     payment_id = Column(String(36), nullable=True, index=True)
 
     expires_at = Column(DateTime, nullable=False, index=True)
     consumed = Column(Boolean, default=False)
     consumed_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -130,11 +130,11 @@ class CbdcFxPosition(Base):
     id = Column(Integer, primary_key=True, index=True)
     currency = Column(String(5), unique=True, nullable=False, index=True)
 
-    net_position_ecfa = Column(Float, default=0.0)
-    position_limit_ecfa = Column(Float, default=50_000_000.0)
+    net_position_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    position_limit_ecfa = Column(Numeric(18, 2, asdecimal=False), default=50_000_000.0)
 
-    total_bought_ecfa = Column(Float, default=0.0)
-    total_sold_ecfa = Column(Float, default=0.0)
+    total_bought_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_sold_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

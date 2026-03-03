@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-from datetime import date, datetime
+from datetime import timezone, date, datetime
 import numpy as np
 from sqlalchemy.orm import Session
 
@@ -158,5 +158,5 @@ class CompositeEngine:
             "latest": latest_composite,
             "history_12m": history[-12:] if len(history) > 12 else history,
             "country_contributions": contributions or {},
-            "generated_at": datetime.utcnow(),
+            "generated_at": datetime.now(timezone.utc),
         }

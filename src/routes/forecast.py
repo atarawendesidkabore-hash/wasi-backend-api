@@ -6,7 +6,7 @@ Serves cached forecast results from the forecast_results table.
 Falls back to live computation if no cached result exists.
 """
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import timezone, date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -50,7 +50,7 @@ def _get_cached_forecast(
     horizon: int,
 ) -> Optional[ForecastResponse]:
     """Return cached forecast if fresh enough, else None."""
-    cutoff = datetime.utcnow() - timedelta(hours=CACHE_MAX_AGE_HOURS)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=CACHE_MAX_AGE_HOURS)
     rows = (
         db.query(ForecastResult)
         .filter(
@@ -113,7 +113,7 @@ def _build_response(result: dict) -> ForecastResponse:
         confidence_score=result.get("confidence_score", 0.0),
         periods=periods,
         method_forecasts=result.get("method_forecasts", {}),
-        calculated_at=datetime.utcnow(),
+        calculated_at=datetime.now(timezone.utc),
         error=result.get("error"),
     )
 
@@ -230,7 +230,7 @@ async def forecast_summary(
         composite_forecast=composite_fc,
         countries=items,
         total_countries=len(items),
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
     )
 
 
@@ -251,7 +251,7 @@ async def refresh_forecasts(
         commodities_computed=result.get("commodities_computed", 0),
         macro_computed=result.get("macro_computed", 0),
         duration_seconds=result.get("duration_seconds", 0.0),
-        computed_at=result.get("computed_at", datetime.utcnow()),
+        computed_at=result.get("computed_at", datetime.now(timezone.utc)),
     )
 
 

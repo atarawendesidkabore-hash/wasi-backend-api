@@ -8,7 +8,7 @@ from src.engines.composite_engine import CompositeEngine
 from src.schemas.composite import CompositeResponse, CompositeReport
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
-from datetime import datetime
+from datetime import timezone, datetime
 from typing import Optional
 
 router = APIRouter(prefix="/api/composite", tags=["Composite"])
@@ -79,7 +79,7 @@ async def calculate_composite(
         for k, v in result.items():
             if k not in exclude_keys:
                 setattr(existing, k, v)
-        existing.calculated_at = datetime.utcnow()
+        existing.calculated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(existing)
         return existing
@@ -87,7 +87,7 @@ async def calculate_composite(
     composite = WASIComposite(
         period_date=period_date,
         **{k: v for k, v in result.items() if k not in exclude_keys},
-        calculated_at=datetime.utcnow(),
+        calculated_at=datetime.now(timezone.utc),
     )
     db.add(composite)
     db.commit()
@@ -179,6 +179,6 @@ async def get_composite_report(
         latest=latest,
         history_12m=history,
         country_contributions=contributions,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
         concentration_warning=concentration_warning,
     )

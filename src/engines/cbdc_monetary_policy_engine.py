@@ -23,7 +23,7 @@ All operations produce audit trail entries and ledger transactions.
 import uuid
 import json
 import logging
-from datetime import datetime, date, timedelta
+from datetime import timezone, datetime, date, timedelta
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -474,7 +474,7 @@ class CbdcMonetaryPolicyEngine:
             coll.pledged_to_facility_id = None  # will update below
 
         # Calculate maturity and interest
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         maturity_days = {"OVERNIGHT": 1, "7_DAY": 7, "28_DAY": 28}.get(maturity, 1)
         matures_at = now + timedelta(days=maturity_days)
         interest = amount_ecfa * (lending_rate / 100.0) * (maturity_days / 365.0)
@@ -557,7 +557,7 @@ class CbdcMonetaryPolicyEngine:
         rates = self.get_current_rates()
         deposit_rate = rates["TAUX_DEPOT"]["rate_percent"]
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         matures_at = now + timedelta(days=1)  # overnight by default
         interest = amount_ecfa * (deposit_rate / 100.0) / 365.0
 
@@ -617,7 +617,7 @@ class CbdcMonetaryPolicyEngine:
         For DEPOSIT: credit bank principal + interest, debit CB.
         Release pledged collateral.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         matured = self.db.query(CbdcStandingFacility).filter(
             CbdcStandingFacility.status == "active",
             CbdcStandingFacility.matures_at <= now,
@@ -1078,7 +1078,7 @@ class CbdcMonetaryPolicyEngine:
         For facility ops we skip PIN/limit checks (CB-to-bank operations).
         """
         from src.utils.cbdc_crypto import compute_entry_hash
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Lock wallets in sorted order
         ids = sorted([debit_wallet_id, credit_wallet_id])

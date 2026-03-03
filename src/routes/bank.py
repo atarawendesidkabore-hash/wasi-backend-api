@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from datetime import date, datetime
+from datetime import timezone, date, datetime
 from typing import Optional
 import json
 import math
@@ -26,21 +26,14 @@ from src.database.models import (
 )
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.wacc_params import (
+    POLITICAL_RISK, VALID_WASI_COUNTRIES, COUNTRY_WACC_PARAMS,
+    _DEFAULT_WACC_PARAMS, _RF, _ERP,
+)
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v2/bank", tags=["Bank"])
 limiter = Limiter(key_func=get_remote_address)
-
-# ── Static political risk table (0–10, lower = more stable) ──────────────────
-POLITICAL_RISK: dict = {
-    "NG": 6.5, "CI": 5.0, "GH": 3.5, "SN": 4.0,
-    "BF": 8.0, "ML": 8.5, "GN": 7.0, "BJ": 4.5,
-    "TG": 5.5, "NE": 8.0, "MR": 6.0, "GW": 7.5,
-    "SL": 5.5, "LR": 5.5, "GM": 4.5, "CV": 2.5,
-}
-
-# WASI v3.0 ECOWAS country set — only these are valid for bank scoring
-VALID_WASI_COUNTRIES: set = set(POLITICAL_RISK.keys())
 
 
 def _validate_wasi_country(country_code: str) -> str:
@@ -80,38 +73,6 @@ def _max_recommended_usd(score: float, loan_amount: float) -> float:
     """Cap recommended loan at score% of requested amount, minimum 10%."""
     pct = max(0.10, score / 100.0)
     return round(loan_amount * pct, 2)
-
-
-# ── Country-specific WACC parameters ─────────────────────────────────────────
-# beta: systematic risk vs global EM market (1.0 = average)
-# eq_ratio: equity share of capital structure (rest is debt)
-# tax: corporate income tax rate
-# currency: ISO code
-COUNTRY_WACC_PARAMS: dict = {
-    "NG": {"beta": 1.30, "eq_ratio": 0.55, "tax": 0.30, "currency": "NGN"},
-    "CI": {"beta": 1.15, "eq_ratio": 0.58, "tax": 0.25, "currency": "XOF"},
-    "GH": {"beta": 1.25, "eq_ratio": 0.57, "tax": 0.25, "currency": "GHS"},
-    "SN": {"beta": 1.10, "eq_ratio": 0.60, "tax": 0.30, "currency": "XOF"},
-    "CM": {"beta": 1.20, "eq_ratio": 0.55, "tax": 0.33, "currency": "XAF"},
-    "AO": {"beta": 1.35, "eq_ratio": 0.52, "tax": 0.25, "currency": "AOA"},
-    "BF": {"beta": 1.40, "eq_ratio": 0.50, "tax": 0.28, "currency": "XOF"},
-    "ML": {"beta": 1.40, "eq_ratio": 0.50, "tax": 0.30, "currency": "XOF"},
-    "GN": {"beta": 1.35, "eq_ratio": 0.52, "tax": 0.35, "currency": "GNF"},
-    "BJ": {"beta": 1.15, "eq_ratio": 0.58, "tax": 0.30, "currency": "XOF"},
-    "TG": {"beta": 1.20, "eq_ratio": 0.57, "tax": 0.27, "currency": "XOF"},
-    "NE": {"beta": 1.40, "eq_ratio": 0.50, "tax": 0.30, "currency": "XOF"},
-    "MR": {"beta": 1.30, "eq_ratio": 0.53, "tax": 0.25, "currency": "MRU"},
-    "GW": {"beta": 1.40, "eq_ratio": 0.50, "tax": 0.25, "currency": "XOF"},
-    "SL": {"beta": 1.30, "eq_ratio": 0.53, "tax": 0.30, "currency": "SLE"},
-    "LR": {"beta": 1.30, "eq_ratio": 0.53, "tax": 0.25, "currency": "LRD"},
-    "GM": {"beta": 1.20, "eq_ratio": 0.57, "tax": 0.31, "currency": "GMD"},
-    "CV": {"beta": 1.05, "eq_ratio": 0.62, "tax": 0.25, "currency": "CVE"},
-}
-_DEFAULT_WACC_PARAMS = {"beta": 1.25, "eq_ratio": 0.55, "tax": 0.28, "currency": "USD"}
-
-# Market constants (updated Feb 2026)
-_RF   = 0.0405  # US 10-year Treasury risk-free rate (Feb 2026, FRED DGS10)
-_ERP  = 0.0425  # Global implied equity risk premium (Damodaran Jan 2026: 4.23%)
 
 
 def _calculate_wacc(
@@ -650,7 +611,7 @@ async def get_corridor_status(
     road_index = latest.road_index
 
     # Collect active alerts for countries along this corridor
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     corridor_country = db.query(Country).filter(Country.id == latest.country_id).first()
     active_alerts = []
     if corridor_country:
@@ -720,7 +681,7 @@ async def get_sector_alert(
     if not country:
         raise HTTPException(status_code=404, detail=f"Country '{country_code}' not found")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     events = (
         db.query(NewsEvent)
         .filter(

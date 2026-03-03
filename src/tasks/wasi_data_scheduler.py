@@ -20,7 +20,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import timezone, date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -80,7 +80,7 @@ async def run_daily_pipeline() -> dict:
 
     summary = {
         "period_date":  str(period_date),
-        "started_at":   datetime.utcnow().isoformat(),
+        "started_at":   datetime.now(timezone.utc).isoformat(),
         "scraped":      0,
         "upserted":     0,
         "skipped":      0,
@@ -330,7 +330,7 @@ async def run_daily_pipeline() -> dict:
         logger.error("Composite update failed after pipeline: %s", exc)
         summary["composite_updated"] = False
 
-    summary["finished_at"] = datetime.utcnow().isoformat()
+    summary["finished_at"] = datetime.now(timezone.utc).isoformat()
     logger.info("Daily pipeline complete: %s", summary)
     return summary
 

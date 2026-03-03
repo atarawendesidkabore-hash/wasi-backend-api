@@ -42,6 +42,8 @@ from src.routes.cbdc_payments import router as cbdc_payments_router
 from src.routes.forecast import router as forecast_router
 from src.routes.tokenization import router as tokenization_router
 from src.routes.risk import router as risk_router
+from src.routes.legislative import router as legislative_router
+from src.routes.valuation import router as valuation_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -343,6 +345,41 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("Tokenization bootstrap failed (non-fatal): %s", exc)
 
+        # Legislative monitoring bootstrap — seed fallback legislation if table is empty
+        try:
+            import src.database.legislative_models  # noqa — ensure tables are created
+            from src.database.legislative_models import LegislativeAct as _LegAct
+            leg_count = db.query(_LegAct).count()
+            if leg_count == 0:
+                logger.info("No legislative data found — seeding fallback legislation...")
+                from src.pipelines.scrapers.legislative_scraper import (
+                    FALLBACK_LEGISLATION, _upsert_act, _generate_external_id,
+                )
+                from src.engines.legislative_engine import LegislativeImpactEngine
+                from src.database.models import Country as _Country
+                _cmap = {c.code: c for c in db.query(_Country).filter(_Country.is_active == True).all()}
+                _summary = {"acts_found": 0, "sessions_found": 0, "errors": 0,
+                            "countries_covered": [], "sources_used": ["fallback_seed"]}
+                for item in FALLBACK_LEGISLATION:
+                    _upsert_act(db, _cmap, {
+                        **item,
+                        "external_id": _generate_external_id("fallback", item["iso2"], item["act_number"]),
+                        "source": "fallback_seed", "source_url": "",
+                    }, _summary)
+                # Score all acts
+                leg_engine = LegislativeImpactEngine(db)
+                unscored = db.query(_LegAct).filter(_LegAct.estimated_magnitude == 0.0).all()
+                for act in unscored:
+                    leg_engine.score_and_update_act(act)
+                    if abs(act.estimated_magnitude) > 5.0:
+                        leg_engine.emit_news_event(act)
+                logger.info("Legislative bootstrap: seeded %d acts, scored %d",
+                            _summary["acts_found"], len(unscored))
+            else:
+                logger.info("Legislative data present (%d acts) — skipping bootstrap", leg_count)
+        except Exception as exc:
+            logger.warning("Legislative bootstrap failed (non-fatal): %s", exc)
+
     finally:
         db.close()
 
@@ -424,6 +461,8 @@ app.include_router(cbdc_payments_router)
 app.include_router(forecast_router)
 app.include_router(tokenization_router)
 app.include_router(risk_router)
+app.include_router(legislative_router)
+app.include_router(valuation_router)
 
 
 @app.get("/", tags=["Root"])

@@ -17,7 +17,7 @@ import json
 import logging
 import random
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import timezone, date, datetime, timedelta
 
 from src.database.connection import SessionLocal
 from src.database.models import Country
@@ -69,7 +69,7 @@ def run_tokenization_aggregation(db=None) -> dict:
         if not all_dates:
             return {
                 "status": "no_data",
-                "computed_at": datetime.utcnow().isoformat(),
+                "computed_at": datetime.now(timezone.utc).isoformat(),
             }
 
         # Get active countries
@@ -217,7 +217,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     existing.avg_confidence = avg_conf
                     existing.cross_validated_pct = cv_pct
                     existing.confidence = avg_conf
-                    existing.calculated_at = datetime.utcnow()
+                    existing.calculated_at = datetime.now(timezone.utc)
                 else:
                     agg = TokenizationDailyAggregate(
                         country_id=cid,
@@ -249,7 +249,7 @@ def run_tokenization_aggregation(db=None) -> dict:
             "period_dates": len(all_dates),
             "countries_processed": total_processed,
             "date_range": f"{all_dates[0]} to {all_dates[-1]}",
-            "computed_at": datetime.utcnow().isoformat(),
+            "computed_at": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as exc:
@@ -258,7 +258,7 @@ def run_tokenization_aggregation(db=None) -> dict:
         return {
             "status": "error",
             "error": str(exc),
-            "computed_at": datetime.utcnow().isoformat(),
+            "computed_at": datetime.now(timezone.utc).isoformat(),
         }
     finally:
         if own_session:
@@ -614,7 +614,7 @@ def seed_tokenization_demo_data(db=None) -> int:
                         worker_id=worker.id,
                         contract_id=contract.contract_id,
                         check_in_date=checkin_date,
-                        check_in_time=datetime.utcnow(),
+                        check_in_time=datetime.now(timezone.utc),
                         location_name=random.choice(regions),
                         daily_rate_cfa=worker.daily_rate_cfa,
                         payment_status="paid" if day_offset > 1 else "approved",
@@ -657,7 +657,7 @@ def seed_tokenization_demo_data(db=None) -> int:
                         mobile_money_provider=random.choice(["ORANGE_MONEY", "MTN_MOMO", "WAVE"]),
                         status="completed" if day_offset > 0 else "queued",
                         batch_date=target_date,
-                        completed_at=datetime.utcnow() if day_offset > 0 else None,
+                        completed_at=datetime.now(timezone.utc) if day_offset > 0 else None,
                     )
                     db.add(disb)
                     pay_count += 1

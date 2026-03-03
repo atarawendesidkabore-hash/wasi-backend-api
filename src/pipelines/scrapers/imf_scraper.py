@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import timezone, datetime
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -191,7 +191,7 @@ def run_imf_scraper(db: Session = None) -> Dict:
                     existing.gdp_usd_billions         = values["gdp_usd_billions"][0]
                     existing.is_projection            = is_projection
                     existing.confidence               = confidence
-                    existing.fetched_at               = datetime.utcnow()
+                    existing.fetched_at               = datetime.now(timezone.utc)
                     summary["updated"] += 1
                 else:
                     summary["skipped"] += 1

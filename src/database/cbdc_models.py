@@ -22,11 +22,11 @@ Account-based Central Bank Digital Currency platform for WAEMU/BCEAO.
 eCFA is pegged 1:1 to XOF (CFA Franc). 1 EUR = 655.957 XOF.
 """
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date,
+    Column, Integer, String, Float, Numeric, DateTime, Date,
     Boolean, Text, ForeignKey, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import timezone, datetime
 from src.database.models import Base
 
 
@@ -67,17 +67,17 @@ class CbdcWallet(Base):
     institution_name = Column(String(200), nullable=True)
 
     # Balance (XOF — 1 eCFA = 1 XOF)
-    balance_ecfa = Column(Float, default=0.0, nullable=False)
-    available_balance_ecfa = Column(Float, default=0.0, nullable=False)
-    hold_amount_ecfa = Column(Float, default=0.0, nullable=False)
+    balance_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0, nullable=False)
+    available_balance_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0, nullable=False)
+    hold_amount_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0, nullable=False)
 
     # KYC tier
     kyc_tier = Column(Integer, default=0, nullable=False)
-    daily_limit_ecfa = Column(Float, default=50_000.0)
-    balance_limit_ecfa = Column(Float, default=200_000.0)
+    daily_limit_ecfa = Column(Numeric(18, 2, asdecimal=False), default=50_000.0)
+    balance_limit_ecfa = Column(Numeric(18, 2, asdecimal=False), default=200_000.0)
 
     # Daily tracking
-    daily_spent_ecfa = Column(Float, default=0.0)
+    daily_spent_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     daily_reset_date = Column(Date, nullable=True)
 
     # Status
@@ -97,8 +97,8 @@ class CbdcWallet(Base):
     pin_locked_until = Column(DateTime, nullable=True)
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     last_activity_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -127,8 +127,8 @@ class CbdcLedgerEntry(Base):
 
     # Entry type
     entry_type = Column(String(6), nullable=False)  # DEBIT | CREDIT
-    amount_ecfa = Column(Float, nullable=False)
-    balance_after_ecfa = Column(Float, nullable=False)
+    amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    balance_after_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
 
     # Classification
     tx_type = Column(String(30), nullable=False, index=True)
@@ -154,7 +154,7 @@ class CbdcLedgerEntry(Base):
     entry_hash = Column(String(64), nullable=False)
     prev_entry_hash = Column(String(64), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     wallet = relationship("CbdcWallet", foreign_keys=[wallet_id])
 
@@ -173,9 +173,9 @@ class CbdcTransaction(Base):
     receiver_wallet_id = Column(String(36), nullable=True, index=True)
 
     # Amount
-    amount_ecfa = Column(Float, nullable=False)
-    fee_ecfa = Column(Float, default=0.0)
-    total_ecfa = Column(Float, nullable=False)
+    amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    fee_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
 
     # Classification
     tx_type = Column(String(30), nullable=False, index=True)
@@ -209,7 +209,7 @@ class CbdcTransaction(Base):
     cobol_ref = Column(String(35), nullable=True)
 
     # Timestamps
-    initiated_at = Column(DateTime, default=datetime.utcnow, index=True)
+    initiated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     completed_at = Column(DateTime, nullable=True)
 
 
@@ -245,7 +245,7 @@ class CbdcKycRecord(Base):
     pep_check = Column(Boolean, default=False)
     sanctions_check = Column(Boolean, default=False)
 
-    submitted_at = Column(DateTime, default=datetime.utcnow)
+    submitted_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     reviewed_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
 
@@ -285,7 +285,7 @@ class CbdcAmlAlert(Base):
     sar_reference = Column(String(50), nullable=True)
     reporting_authority = Column(String(50), default="CENTIF")
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     resolved_at = Column(DateTime, nullable=True)
 
     wallet = relationship("CbdcWallet")
@@ -319,7 +319,7 @@ class CbdcPolicy(Base):
     created_by = Column(String(36), nullable=False)
     approved_by = Column(String(36), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     cobol_policy_code = Column(String(10), nullable=True)
 
@@ -341,8 +341,8 @@ class CbdcSettlement(Base):
     bank_b_code = Column(String(20), nullable=True)
 
     # Amounts
-    gross_amount_ecfa = Column(Float, nullable=False)
-    net_amount_ecfa = Column(Float, nullable=False)
+    gross_amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    net_amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     direction = Column(String(10), nullable=False)
     # A_TO_B | B_TO_A | BALANCED
 
@@ -362,7 +362,7 @@ class CbdcSettlement(Base):
     window_end = Column(DateTime, nullable=False)
     settled_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +398,7 @@ class CbdcMerchant(Base):
     status = Column(String(20), default="active")
     kyc_tier = Column(Integer, default=2)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     wallet = relationship("CbdcWallet")
 
@@ -435,7 +435,7 @@ class CbdcAuditLog(Base):
     # Integrity
     entry_hash = Column(String(64), nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +450,7 @@ class CbdcOfflineVoucher(Base):
 
     sender_wallet_id = Column(String(36), nullable=False, index=True)
     receiver_phone_hash = Column(String(64), nullable=False)
-    amount_ecfa = Column(Float, nullable=False)
+    amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
 
     # Cryptographic proof
     sender_signature = Column(String(200), nullable=False)
@@ -465,7 +465,7 @@ class CbdcOfflineVoucher(Base):
     redeemed_at = Column(DateTime, nullable=True)
     reconciled_transaction_id = Column(String(36), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -479,18 +479,18 @@ class CbdcMonetaryAggregate(Base):
     country_code = Column(String(2), nullable=False, index=True)
 
     # Aggregate balances
-    total_ecfa_circulation = Column(Float, nullable=False)
-    retail_balance_ecfa = Column(Float, default=0.0)
-    merchant_balance_ecfa = Column(Float, default=0.0)
-    bank_balance_ecfa = Column(Float, default=0.0)
-    agent_balance_ecfa = Column(Float, default=0.0)
+    total_ecfa_circulation = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    retail_balance_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    merchant_balance_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    bank_balance_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    agent_balance_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Flow metrics
-    total_minted_ecfa = Column(Float, default=0.0)
-    total_burned_ecfa = Column(Float, default=0.0)
-    total_p2p_volume_ecfa = Column(Float, default=0.0)
-    total_merchant_volume_ecfa = Column(Float, default=0.0)
-    total_cross_border_volume_ecfa = Column(Float, default=0.0)
+    total_minted_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_burned_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_p2p_volume_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_merchant_volume_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_cross_border_volume_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Activity
     active_wallets = Column(Integer, default=0)
@@ -499,20 +499,20 @@ class CbdcMonetaryAggregate(Base):
 
     # ── Money supply breakdown (BCEAO standard) ──────────────────────
     # M0 = base money = eCFA minted - eCFA burned (CB liability)
-    m0_base_money_ecfa = Column(Float, default=0.0)
+    m0_base_money_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     # M1 = M0 in circulation = retail + merchant + agent balances (demand deposits)
-    m1_narrow_money_ecfa = Column(Float, default=0.0)
+    m1_narrow_money_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     # M2 = M1 + commercial bank reserve balances (broad money)
-    m2_broad_money_ecfa = Column(Float, default=0.0)
+    m2_broad_money_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Reserve position
-    total_required_reserves_ecfa = Column(Float, default=0.0)
-    total_held_reserves_ecfa = Column(Float, default=0.0)
+    total_required_reserves_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_held_reserves_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     reserve_compliance_ratio = Column(Float, default=0.0)  # held / required
 
     # Standing facility usage
-    total_lending_facility_ecfa = Column(Float, default=0.0)
-    total_deposit_facility_ecfa = Column(Float, default=0.0)
+    total_lending_facility_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_deposit_facility_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Policy rates snapshot (at time of aggregate)
     taux_directeur_percent = Column(Float, nullable=True)
@@ -523,11 +523,11 @@ class CbdcMonetaryAggregate(Base):
     velocity = Column(Float, nullable=True)
 
     # Interest/demurrage applied this day
-    total_interest_paid_ecfa = Column(Float, default=0.0)
-    total_demurrage_collected_ecfa = Column(Float, default=0.0)
-    total_reserve_penalties_ecfa = Column(Float, default=0.0)
+    total_interest_paid_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_demurrage_collected_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    total_reserve_penalties_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("snapshot_date", "country_code",
@@ -545,13 +545,13 @@ class CbdcFxRate(Base):
 
     base_currency = Column(String(5), default="XOF", nullable=False)
     target_currency = Column(String(5), nullable=False, index=True)
-    rate = Column(Float, nullable=False)
-    inverse_rate = Column(Float, nullable=False)
+    rate = Column(Numeric(12, 6, asdecimal=False), nullable=False)
+    inverse_rate = Column(Numeric(12, 6, asdecimal=False), nullable=False)
 
     effective_date = Column(Date, nullable=False, index=True)
     source = Column(String(50), default="BCEAO")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("target_currency", "effective_date",
@@ -591,7 +591,7 @@ class CbdcPolicyRate(Base):
     superseded_date = Column(Date, nullable=True)  # when replaced by newer rate
     is_current = Column(Boolean, default=True, index=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("rate_type", "effective_date",
@@ -619,29 +619,29 @@ class CbdcReserveRequirement(Base):
 
     # Requirement
     required_ratio_percent = Column(Float, nullable=False)  # e.g. 3.0 = 3%
-    deposit_base_ecfa = Column(Float, nullable=False)  # total client deposits
-    required_amount_ecfa = Column(Float, nullable=False)  # ratio * deposit_base
-    current_holding_ecfa = Column(Float, nullable=False)  # actual reserve held
+    deposit_base_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)  # total client deposits
+    required_amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)  # ratio * deposit_base
+    current_holding_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)  # actual reserve held
 
     # Compliance
-    surplus_ecfa = Column(Float, default=0.0)  # positive = excess reserve
-    deficiency_ecfa = Column(Float, default=0.0)  # positive = shortfall
+    surplus_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)  # positive = excess reserve
+    deficiency_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)  # positive = shortfall
     is_compliant = Column(Boolean, default=True, index=True)
 
     # Penalty
     penalty_rate_percent = Column(Float, default=3.5)  # rate on deficiency
-    accrued_penalty_ecfa = Column(Float, default=0.0)
+    accrued_penalty_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Remuneration on required reserves (at TAUX_RESERVE)
     remuneration_rate_percent = Column(Float, default=0.0)
-    accrued_remuneration_ecfa = Column(Float, default=0.0)
+    accrued_remuneration_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Period
     computation_date = Column(Date, nullable=False, index=True)
     maintenance_period_start = Column(Date, nullable=False)
     maintenance_period_end = Column(Date, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     bank_wallet = relationship("CbdcWallet", foreign_keys=[bank_wallet_id])
 
@@ -673,13 +673,13 @@ class CbdcStandingFacility(Base):
     institution_code = Column(String(20), nullable=False)
 
     # Terms
-    amount_ecfa = Column(Float, nullable=False)
+    amount_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     rate_percent = Column(Float, nullable=False)  # derived from policy rate
-    interest_ecfa = Column(Float, default=0.0)  # accrued interest
+    interest_ecfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)  # accrued interest
 
     # Collateral (for lending)
     collateral_asset_id = Column(String(36), nullable=True)
-    collateral_value_ecfa = Column(Float, nullable=True)
+    collateral_value_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=True)
     haircut_percent = Column(Float, nullable=True)
 
     # Lifecycle
@@ -694,7 +694,7 @@ class CbdcStandingFacility(Base):
     open_transaction_id = Column(String(36), nullable=True)
     close_transaction_id = Column(String(36), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     bank_wallet = relationship("CbdcWallet", foreign_keys=[bank_wallet_id])
 
@@ -734,7 +734,7 @@ class CbdcMonetaryPolicyDecision(Base):
     # Economic context
     inflation_rate_percent = Column(Float, nullable=True)
     gdp_growth_percent = Column(Float, nullable=True)
-    ecfa_circulation_total = Column(Float, nullable=True)
+    ecfa_circulation_total = Column(Numeric(18, 2, asdecimal=False), nullable=True)
     ecfa_velocity = Column(Float, nullable=True)
 
     # Vote
@@ -749,7 +749,7 @@ class CbdcMonetaryPolicyDecision(Base):
     published_at = Column(DateTime, nullable=True)
     implemented_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -771,10 +771,10 @@ class CbdcEligibleCollateral(Base):
     issuer_country = Column(String(2), nullable=True)
 
     # Valuation
-    face_value_ecfa = Column(Float, nullable=False)
-    market_value_ecfa = Column(Float, nullable=False)
+    face_value_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    market_value_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     haircut_percent = Column(Float, nullable=False)  # e.g. 5.0 = 5%
-    collateral_value_ecfa = Column(Float, nullable=False)  # market * (1 - haircut)
+    collateral_value_ecfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)  # market * (1 - haircut)
 
     # Rating
     min_credit_rating = Column(String(10), nullable=True)  # "BBB-" etc.
@@ -793,7 +793,7 @@ class CbdcEligibleCollateral(Base):
     effective_date = Column(Date, nullable=False)
     expiry_date = Column(Date, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     owner_wallet = relationship("CbdcWallet", foreign_keys=[owner_wallet_id])

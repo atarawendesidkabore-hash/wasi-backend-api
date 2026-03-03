@@ -186,13 +186,30 @@ async def set_pin(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Set or update wallet PIN for USSD transactions."""
+    """Set or update wallet PIN for USSD transactions.
+
+    If the wallet already has a PIN, the current_pin field is required.
+    """
     wallet = db.query(CbdcWallet).filter(
         CbdcWallet.wallet_id == body.wallet_id,
         CbdcWallet.user_id == current_user.id,
     ).first()
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet not found or not owned by you")
+
+    # If wallet already has a PIN, verify current PIN before allowing change
+    if wallet.pin_hash is not None:
+        if not body.current_pin:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current PIN is required to change an existing PIN",
+            )
+        from src.utils.cbdc_crypto import verify_pin
+        if not verify_pin(body.current_pin, wallet.pin_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current PIN is incorrect",
+            )
 
     from src.utils.cbdc_audit import log_pin_changed
     wallet.pin_hash = hash_pin(body.new_pin)

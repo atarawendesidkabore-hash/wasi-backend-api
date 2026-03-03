@@ -1,6 +1,6 @@
 import logging
 import threading
-from datetime import datetime
+from datetime import timezone, datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from src.database.connection import SessionLocal
@@ -86,11 +86,11 @@ async def update_composite_index():
             for k, v in result.items():
                 if k not in exclude_keys:
                     setattr(existing, k, v)
-            existing.calculated_at = datetime.utcnow()
+            existing.calculated_at = datetime.now(timezone.utc)
         else:
             record = WASIComposite(
                 period_date=period_date,
-                calculated_at=datetime.utcnow(),
+                calculated_at=datetime.now(timezone.utc),
                 **{k: v for k, v in result.items() if k not in exclude_keys},
             )
             db.add(record)
@@ -262,11 +262,21 @@ def start_scheduler():
         misfire_grace_time=600,
     )
 
+    # Legislative monitoring: sweep every 6 hours
+    from src.tasks.legislative_sweep import run_legislative_sweep
+    _scheduler.add_job(
+        run_legislative_sweep,
+        trigger=IntervalTrigger(hours=6),
+        id="legislative_sweep",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
         "AML 1h, interest daily, reserves daily, facilities 1h, forecast daily 04:00, "
-        "FX rates 6h, tokenization 4h, disbursement daily 20:00",
+        "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )
 

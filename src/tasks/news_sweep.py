@@ -94,6 +94,14 @@ EVENT_KEYWORDS = {
         "note de conjoncture", "statistical bulletin", "preliminary figures",
         "rapport trimestriel", "données préliminaires", "communiqué statistique",
     ],
+    "LEGISLATIVE_CHANGE": [
+        "new law", "parliament passes", "bill enacted", "law adopted",
+        "national assembly approves", "gazette", "journal officiel",
+        "loi adoptée", "assemblée nationale vote", "code adopté",
+        "loi promulguée", "parliament approves", "bill signed into law",
+        "finance act", "loi de finances", "investment code",
+        "code des investissements", "customs act", "trade bill",
+    ],
 }
 
 # Default magnitude per event type (negative = bad, positive = good)
@@ -111,6 +119,7 @@ EVENT_MAGNITUDE = {
     "TRADE_POSITIVE_SIGNAL": 10.0,
     "RAIL_OPERATIONAL_CHANGE": 15.0,
     "NEW_GOVERNMENT_DOCUMENT": 0.0,     # neutral — triggers document download only
+    "LEGISLATIVE_CHANGE": 6.0,           # positive default — refined by legislative engine
 }
 
 EVENT_LIFETIME = {
@@ -127,6 +136,7 @@ EVENT_LIFETIME = {
     "TRADE_POSITIVE_SIGNAL": timedelta(days=14),
     "RAIL_OPERATIONAL_CHANGE": timedelta(days=14),
     "NEW_GOVERNMENT_DOCUMENT": timedelta(days=1),
+    "LEGISLATIVE_CHANGE": timedelta(days=21),
 }
 
 # Country name → ISO-2 code mapping for headline matching
@@ -186,27 +196,32 @@ GOVERNMENT_SOURCES: dict = {
         "ports":     "https://www.nimasa.gov.ng/news",
         "stats":     "https://nigerianstat.gov.ng/elibrary",
         "transport": "https://fmot.gov.ng/news",
+        "assembly":  "https://nass.gov.ng/",
     },
     "CI": {
         "douanes":   "https://www.douanes.ci/actualites",
         "port":      "https://www.portabidjan.ci/actualites",
         "stats":     "https://www.ins.ci/actualites",
         "bceao":     "https://www.bceao.int/fr/publications",
+        "assemblee": "https://www.assnat.ci/",
     },
     "GH": {
         "customs":   "https://www.gra.gov.gh/news",
         "ports":     "https://www.ghanaports.gov.gh/news",
         "stats":     "https://statsghana.gov.gh/news",
+        "parliament": "https://www.parliament.gh/",
     },
     "SN": {
         "douanes":   "https://www.douanes.sn/actualites",
         "port":      "https://www.portdakar.sn/actualites",
         "ansd":      "https://www.ansd.sn/actualites",
+        "assemblee": "https://www.assemblee-nationale.sn/",
     },
     "BF": {
         "dgd":       "https://www.douanes.bf/actualites",
         "sonabhy":   "https://www.sonabhy.bf/actualites",
         "finances":  "https://www.finances.gov.bf/actualites",
+        "assemblee": "https://www.assembleenationale.bf/",
     },
     "ML": {
         "douanes":   "https://www.douanes.gov.ml/actualites",

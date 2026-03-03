@@ -13,7 +13,7 @@ Endpoints for monitoring data quality and triggering manual data refreshes.
   GET  /api/v2/data/macro/{country_code}  — 1 credit    — IMF macro indicators for a country
 """
 import logging
-from datetime import datetime, date
+from datetime import timezone, datetime, date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -95,7 +95,7 @@ async def get_data_status(
             })
 
     return {
-        "checked_at":            str(datetime.utcnow()),
+        "checked_at":            str(datetime.now(timezone.utc)),
         "total_countries":       len(rows),
         "countries_with_data":   len(has_data),
         "worldbank_sourced":     len(wb_sourced),
@@ -290,7 +290,7 @@ async def get_latest_commodities(
         )
 
     return {
-        "as_of":    str(datetime.utcnow()),
+        "as_of":    str(datetime.now(timezone.utc)),
         "count":    len(latest),
         "prices":   latest,
         "note":     "World Bank Pink Sheet monthly averages. Cocoa & cotton critical for ECOWAS export revenues.",

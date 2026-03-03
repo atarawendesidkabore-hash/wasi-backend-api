@@ -74,6 +74,8 @@ class WalletInfoResponse(BaseModel):
 
 class SetPinRequest(BaseModel):
     wallet_id: str
+    current_pin: str | None = Field(None, min_length=4, max_length=6, pattern=r"^\d{4,6}$",
+                                     description="Required when changing an existing PIN")
     new_pin: str = Field(..., min_length=4, max_length=6, pattern=r"^\d{4,6}$")
 
 

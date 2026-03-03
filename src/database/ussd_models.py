@@ -13,11 +13,11 @@ penetration remains low. Over 70% of financial transactions in ECOWAS
 flow through USSD, making it the richest real-time economic signal.
 """
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date,
+    Column, Integer, String, Float, Numeric, DateTime, Date,
     Boolean, Text, ForeignKey, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import timezone, datetime
 from src.database.models import Base
 
 
@@ -37,7 +37,7 @@ class USSDProvider(Base):
     country_codes = Column(String(100))        # Comma-separated ISO-2 codes covered
     ussd_shortcode = Column(String(20))        # e.g. *144# (Orange), *170# (MTN)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     sessions = relationship("USSDSession", back_populates="provider")
 
@@ -66,7 +66,7 @@ class USSDSession(Base):
 
     # Status
     status = Column(String(20), default="active")      # active | completed | timeout | error
-    started_at = Column(DateTime, default=datetime.utcnow, index=True)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     ended_at = Column(DateTime)
 
     provider = relationship("USSDProvider", back_populates="sessions")
@@ -95,10 +95,10 @@ class USSDMobileMoneyFlow(Base):
 
     # Transaction volumes (daily aggregates)
     transaction_count = Column(Integer, default=0)       # Number of transactions
-    total_value_local = Column(Float, default=0.0)       # Total value (local currency)
-    total_value_usd = Column(Float, default=0.0)         # Total value (USD equivalent)
-    avg_transaction_local = Column(Float, default=0.0)   # Avg transaction (local currency)
-    avg_transaction_usd = Column(Float, default=0.0)     # Avg transaction (USD)
+    total_value_local = Column(Numeric(18, 2, asdecimal=False), default=0.0)       # Total value (local currency)
+    total_value_usd = Column(Numeric(18, 2, asdecimal=False), default=0.0)         # Total value (USD equivalent)
+    avg_transaction_local = Column(Numeric(18, 2, asdecimal=False), default=0.0)   # Avg transaction (local currency)
+    avg_transaction_usd = Column(Numeric(18, 2, asdecimal=False), default=0.0)     # Avg transaction (USD)
 
     # Flow breakdown
     p2p_count = Column(Integer, default=0)               # Person-to-person transfers
@@ -110,12 +110,12 @@ class USSDMobileMoneyFlow(Base):
 
     # Currency
     local_currency = Column(String(5))                   # XOF | NGN | GHS | GNF | GMD | CVE
-    fx_rate_usd = Column(Float)                          # 1 USD = X local
+    fx_rate_usd = Column(Numeric(12, 6, asdecimal=False))                          # 1 USD = X local
 
     # Data quality
     confidence = Column(Float, default=0.80)
     data_source = Column(String(50), default="ussd_gateway")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -147,8 +147,8 @@ class USSDCommodityReport(Base):
     # CATTLE | GOAT | FISH | PALM_OIL | SHEA_BUTTER | CASHEW | COCOA_LOCAL
     commodity_name = Column(String(100), nullable=False)
     unit = Column(String(30), default="local/kg")
-    price_local = Column(Float, nullable=False)
-    price_usd = Column(Float)
+    price_local = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    price_usd = Column(Numeric(18, 2, asdecimal=False))
     local_currency = Column(String(5))
 
     # Comparison
@@ -161,7 +161,7 @@ class USSDCommodityReport(Base):
 
     confidence = Column(Float, default=0.65)             # Lower — grassroots data
     data_source = Column(String(50), default="ussd_market_report")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -198,8 +198,8 @@ class USSDTradeDeclaration(Base):
     # FOOD_GRAINS | LIVESTOCK | TEXTILES | ELECTRONICS | FUEL | CONSTRUCTION | VEHICLES | OTHER
     commodity_description = Column(String(200))
     quantity_kg = Column(Float)
-    declared_value_local = Column(Float)
-    declared_value_usd = Column(Float)
+    declared_value_local = Column(Numeric(18, 2, asdecimal=False))
+    declared_value_usd = Column(Numeric(18, 2, asdecimal=False))
     local_currency = Column(String(5))
 
     # Transport
@@ -212,7 +212,7 @@ class USSDTradeDeclaration(Base):
 
     confidence = Column(Float, default=0.55)             # Low — self-reported informal trade
     data_source = Column(String(50), default="ussd_trade_declaration")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -264,7 +264,7 @@ class USSDPortClearance(Base):
 
     confidence = Column(Float, default=0.70)
     data_source = Column(String(50), default="ussd_port_report")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -303,7 +303,7 @@ class USSDDailyAggregate(Base):
     data_points_count = Column(Integer, default=0)   # Total USSD data points for the day
     providers_reporting = Column(Integer, default=0)  # How many MNOs reported
     confidence = Column(Float, default=0.60)
-    calculated_at = Column(DateTime, default=datetime.utcnow)
+    calculated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 

@@ -1,9 +1,9 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date,
+    Column, Integer, String, Float, Numeric, DateTime, Date,
     Boolean, Text, ForeignKey, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship, DeclarativeBase
-from datetime import datetime
+from datetime import timezone, datetime
 
 
 class Base(DeclarativeBase):
@@ -17,12 +17,12 @@ class User(Base):
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    x402_balance = Column(Float, default=0.0, nullable=False)
+    x402_balance = Column(Numeric(18, 2, asdecimal=False), default=0.0, nullable=False)
     tier = Column(String(20), default="free", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     transactions = relationship("X402Transaction", back_populates="user")
     query_logs = relationship("QueryLog", back_populates="user")
@@ -37,7 +37,7 @@ class Country(Base):
     tier = Column(String(10), nullable=False)
     weight = Column(Float, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     indices = relationship("CountryIndex", back_populates="country")
 
@@ -56,7 +56,7 @@ class CountryIndex(Base):
     port_efficiency_score = Column(Float)
     dwell_time_days = Column(Float)
     gdp_growth_pct = Column(Float)
-    trade_value_usd = Column(Float)
+    trade_value_usd = Column(Numeric(18, 2, asdecimal=False))
 
     # Computed sub-scores (0.0 – 100.0)
     shipping_score = Column(Float)
@@ -70,7 +70,7 @@ class CountryIndex(Base):
     data_quality = Column(String(10), default="high")  # high / medium / low
 
     data_source = Column(String(50), default="csv_import")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country", back_populates="indices")
 
@@ -98,7 +98,7 @@ class WASIComposite(Base):
 
     countries_included = Column(Integer)
     calculation_version = Column(String(10), default="1.0")
-    calculated_at = Column(DateTime, default=datetime.utcnow)
+    calculated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class X402Tier(Base):
@@ -106,11 +106,11 @@ class X402Tier(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tier_name = Column(String(50), unique=True, nullable=False)
-    query_cost = Column(Float, nullable=False)
+    query_cost = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     monthly_limit = Column(Integer, nullable=True)
     description = Column(String(255))
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class X402Transaction(Base):
@@ -119,13 +119,13 @@ class X402Transaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     transaction_type = Column(String(20), nullable=False)
-    amount = Column(Float, nullable=False)
-    balance_before = Column(Float, nullable=False)
-    balance_after = Column(Float, nullable=False)
+    amount = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    balance_before = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    balance_after = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     reference_id = Column(String(100), unique=True, index=True)
     description = Column(String(255))
     status = Column(String(20), default="completed")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="transactions")
 
@@ -138,11 +138,11 @@ class QueryLog(Base):
     endpoint = Column(String(255), nullable=False)
     method = Column(String(10), nullable=False)
     query_params = Column(Text)
-    credits_used = Column(Float, default=0.0)
+    credits_used = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     response_status = Column(Integer)
     response_time_ms = Column(Float)
     ip_address = Column(String(45))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="query_logs")
 
@@ -161,15 +161,15 @@ class WASIProcurementRecord(Base):
     # Procurement metrics
     tender_count = Column(Integer, default=0)          # Tenders published
     awarded_count = Column(Integer, default=0)          # Contracts awarded
-    total_value_usd = Column(Float, default=0.0)        # Total awarded value (USD)
-    avg_contract_usd = Column(Float, default=0.0)       # Average contract size (USD)
+    total_value_usd = Column(Numeric(18, 2, asdecimal=False), default=0.0)        # Total awarded value (USD)
+    avg_contract_usd = Column(Numeric(18, 2, asdecimal=False), default=0.0)       # Average contract size (USD)
     infrastructure_pct = Column(Float, default=0.0)     # % of contracts for trade infrastructure
 
     # Metadata
     data_source = Column(String(100), default="manual")
     confidence = Column(Float, default=1.0)             # 0.0–1.0 data quality
     data_quality = Column(String(10), default="high")   # high / medium / low
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -192,10 +192,10 @@ class BilateralTrade(Base):
     year = Column(Integer, nullable=False, index=True)
 
     # Trade flows (WASI country perspective)
-    export_value_usd = Column(Float, default=0.0)   # WASI → partner (exports)
-    import_value_usd = Column(Float, default=0.0)   # WASI ← partner (imports)
-    total_trade_usd  = Column(Float, default=0.0)   # export + import
-    trade_balance_usd = Column(Float, default=0.0)  # export - import (+ = surplus)
+    export_value_usd = Column(Numeric(18, 2, asdecimal=False), default=0.0)   # WASI → partner (exports)
+    import_value_usd = Column(Numeric(18, 2, asdecimal=False), default=0.0)   # WASI ← partner (imports)
+    total_trade_usd  = Column(Numeric(18, 2, asdecimal=False), default=0.0)   # export + import
+    trade_balance_usd = Column(Numeric(18, 2, asdecimal=False), default=0.0)  # export - import (+ = surplus)
 
     # Commodity breakdown (comma-separated or JSON string)
     top_exports = Column(Text, default="")   # main goods exported to partner
@@ -203,7 +203,7 @@ class BilateralTrade(Base):
 
     data_source = Column(String(100), default="un_comtrade_estimate")
     confidence = Column(Float, default=0.70)         # 0.0–1.0
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -242,19 +242,19 @@ class StockMarketData(Base):
     # Performance
     change_pct     = Column(Float)          # day-over-day or period-over-period %
     ytd_change_pct = Column(Float)          # year-to-date %
-    market_cap_usd = Column(Float)          # total market cap in USD
-    volume_usd     = Column(Float)          # trading volume in USD
+    market_cap_usd = Column(Numeric(18, 2, asdecimal=False))          # total market cap in USD
+    volume_usd     = Column(Numeric(18, 2, asdecimal=False))          # trading volume in USD
 
     # T3: Local currency fields — use for divergence to avoid FX distortion
-    market_cap_local = Column(Float)        # market cap in local currency
+    market_cap_local = Column(Numeric(18, 2, asdecimal=False))        # market cap in local currency
     local_currency   = Column(String(5))    # NGN | GHS | XOF
-    fx_rate_usd      = Column(Float)        # 1 USD = X local_currency at snapshot
+    fx_rate_usd      = Column(Numeric(12, 6, asdecimal=False))        # 1 USD = X local_currency at snapshot
     fx_rate_date     = Column(Date)         # date of FX rate used
 
     # Metadata
     data_source    = Column(String(50), default="kwayisi_api")
     confidence     = Column(Float, default=0.85)
-    created_at     = Column(DateTime, default=datetime.utcnow)
+    created_at     = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (UniqueConstraint("exchange_code", "index_name", "trade_date"),)
 
@@ -283,7 +283,7 @@ class AirTraffic(Base):
 
     data_source = Column(String(50), default="asecna_estimate")
     confidence = Column(Float, default=0.75)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -313,7 +313,7 @@ class RailTraffic(Base):
 
     data_source = Column(String(50), default="sitarail_estimate")
     confidence = Column(Float, default=0.70)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -342,7 +342,7 @@ class RoadCorridor(Base):
 
     data_source = Column(String(50), default="corridor_estimate")
     confidence = Column(Float, default=0.65)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -375,7 +375,7 @@ class TransportComposite(Base):
     w_road = Column(Float)
 
     transport_composite = Column(Float, nullable=False)   # weighted composite (0–100)
-    calculated_at = Column(DateTime, default=datetime.utcnow)
+    calculated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -403,9 +403,9 @@ class DivergenceSnapshot(Base):
     divergence_pct           = Column(Float)
     signal                   = Column(String(30), nullable=False)
     liquidity_flag           = Column(Boolean, default=False)
-    volume_usd               = Column(Float)
+    volume_usd               = Column(Numeric(18, 2, asdecimal=False))
 
-    computed_at = Column(DateTime, default=datetime.utcnow)
+    computed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (UniqueConstraint("exchange_code", "index_name", "snapshot_date"),)
 
@@ -431,7 +431,7 @@ class NewsEvent(Base):
     # Impact: negative = bad for shipping, positive = good
     magnitude = Column(Float, nullable=False, default=0.0)   # -25 to +25
 
-    detected_at = Column(DateTime, default=datetime.utcnow, index=True)
+    detected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     expires_at = Column(DateTime, nullable=False, index=True)
     is_active = Column(Boolean, default=True, index=True)
 
@@ -455,7 +455,7 @@ class LiveSignal(Base):
     live_adjustment = Column(Float, default=0.0)
     adjusted_index = Column(Float, nullable=False)
     active_event_ids = Column(Text, default="[]")    # JSON list of NewsEvent.id
-    computed_at = Column(DateTime, default=datetime.utcnow)
+    computed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -478,7 +478,7 @@ class GovernmentDocument(Base):
     published_date = Column(Date)
     keywords_matched = Column(Text, default="[]")   # JSON list of matched keywords
     relevance_score = Column(Float, default=0.0)    # 0.0–1.0
-    processed_at = Column(DateTime, default=datetime.utcnow)
+    processed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -498,14 +498,14 @@ class BankDossierScore(Base):
 
     # Input parameters
     sector = Column(String(100), nullable=False)
-    loan_amount_usd = Column(Float, nullable=False)
+    loan_amount_usd = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     loan_term_months = Column(Integer, nullable=False)
     collateral_type = Column(String(50))
 
     # Scoring output
     overall_score = Column(Float, nullable=False)           # 0–100
     risk_rating = Column(String(5), nullable=False)         # AAA / AA / A / BBB / BB / B / CCC
-    max_recommended_usd = Column(Float)
+    max_recommended_usd = Column(Numeric(18, 2, asdecimal=False))
     rate_premium_bps = Column(Integer)                      # basis points above base rate
 
     # Component scores (JSON) — wasi_component, trade_component, procurement_component, volatility_penalty, political_risk
@@ -514,7 +514,7 @@ class BankDossierScore(Base):
     narrative = Column(Text)                                # human-readable explanation
     bank_review_required = Column(Boolean, default=True)    # always True (human-in-the-loop)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User")
     country = relationship("Country")
@@ -538,12 +538,12 @@ class MacroIndicator(Base):
     debt_gdp_pct = Column(Float)              # GGXWDG_NGDP — Gross gov't debt (% GDP)
     current_account_gdp_pct = Column(Float)   # BCA_NGDPD — CA balance (% GDP)
     unemployment_pct = Column(Float)          # LUR — Unemployment rate (%)
-    gdp_usd_billions = Column(Float)          # NGDPD — Nominal GDP (USD billions)
+    gdp_usd_billions = Column(Numeric(18, 4, asdecimal=False))          # NGDPD — Nominal GDP (USD billions)
 
     data_source = Column(String(50), default="imf_weo")
     is_projection = Column(Boolean, default=False)   # True = IMF estimate/projection
     confidence = Column(Float, default=0.85)
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -564,12 +564,12 @@ class CommodityPrice(Base):
     unit = Column(String(50))           # USD/mt | USD/bbl | USD/troy oz | USD/kg
 
     period_date = Column(Date, nullable=False, index=True)   # 1st of month for monthly
-    price_usd = Column(Float, nullable=False)
+    price_usd = Column(Numeric(18, 2, asdecimal=False), nullable=False)
 
     pct_change_mom = Column(Float)      # month-over-month %
     pct_change_yoy = Column(Float)      # year-over-year %
 
     data_source = Column(String(50), default="wb_pinksheet")
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (UniqueConstraint("commodity_code", "period_date"),)

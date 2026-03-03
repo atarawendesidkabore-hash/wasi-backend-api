@@ -3,7 +3,7 @@ Wallet routes — extends payment with full transaction history, tier info, and 
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import timezone, datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
@@ -197,7 +197,7 @@ async def get_usage_stats(
     from datetime import timedelta
     from sqlalchemy import func as sqlfunc
 
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
 
     logs = db.query(QueryLog).filter(QueryLog.user_id == current_user.id).all()
     total_credits = sum(l.credits_used or 0 for l in logs)

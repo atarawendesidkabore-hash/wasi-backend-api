@@ -5,7 +5,7 @@ Uses the same in-memory SQLite + StaticPool pattern from conftest.py.
 Seeds historical data, then tests the /api/v3/forecast/ endpoints.
 """
 import pytest
-from datetime import date, datetime, timedelta
+from datetime import timezone, date, datetime, timedelta
 from fastapi.testclient import TestClient
 
 from src.main import app
@@ -75,7 +75,7 @@ def _seed_composite(db, n_periods=6):
             composite_value=round(base_value + i * 1.5, 2),
             countries_included=16,
             calculation_version="3.0",
-            calculated_at=datetime.utcnow(),
+            calculated_at=datetime.now(timezone.utc),
         ))
     db.commit()
 

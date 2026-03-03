@@ -14,7 +14,7 @@ Real integration comes when country agreements are signed.
 """
 import uuid
 import logging
-from datetime import datetime
+from datetime import timezone, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -338,7 +338,7 @@ class CbdcPaymentRouter:
 
                 # For internal, skip FX_CONVERTED and DEST_CREDITED
                 self._update_status(payment, "SETTLED")
-                payment.settled_at = datetime.utcnow()
+                payment.settled_at = datetime.now(timezone.utc)
 
             elif route["rail_type"] in ("ECFA_TO_EXTERNAL", "EXTERNAL_BRIDGE"):
                 # Debit sender → BCEAO treasury (escrow)
@@ -386,7 +386,7 @@ class CbdcPaymentRouter:
 
                 # 7. SETTLED
                 self._update_status(payment, "SETTLED")
-                payment.settled_at = datetime.utcnow()
+                payment.settled_at = datetime.now(timezone.utc)
 
             elif route["rail_type"] == "EXTERNAL_TO_ECFA":
                 # External bridge receive stub → mint/credit receiver eCFA
@@ -414,7 +414,7 @@ class CbdcPaymentRouter:
                     payment.dest_tx_id = tx_result["transaction_id"]
 
                 self._update_status(payment, "SETTLED")
-                payment.settled_at = datetime.utcnow()
+                payment.settled_at = datetime.now(timezone.utc)
 
             self._log_event(payment, "CROSS_BORDER_SETTLED", {
                 "total_cost_ecfa": total_cost,
@@ -654,13 +654,13 @@ class CbdcPaymentRouter:
     def _update_status(self, payment: CbdcCrossBorderPayment,
                        new_status: str) -> None:
         payment.status = new_status
-        payment.updated_at = datetime.utcnow()
+        payment.updated_at = datetime.now(timezone.utc)
 
     def _fail_payment(self, payment: CbdcCrossBorderPayment,
                       reason: str) -> None:
         payment.status = "FAILED"
         payment.failure_reason = reason
-        payment.updated_at = datetime.utcnow()
+        payment.updated_at = datetime.now(timezone.utc)
         self._log_event(payment, "CROSS_BORDER_FAILED", {"reason": reason})
 
     def _log_event(self, payment: CbdcCrossBorderPayment,

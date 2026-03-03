@@ -6,9 +6,9 @@ Pillar 2: Business Tax Credits (CITD) — business data submissions
 Pillar 3: Faso Meabo Contract Acceleration — milestones + worker check-ins
 """
 
-from datetime import datetime, date
+from datetime import timezone, datetime, date
 from sqlalchemy import (
-    Column, Integer, Float, String, Text, Date, DateTime, Boolean,
+    Column, Integer, Float, Numeric, String, Text, Date, DateTime, Boolean,
     ForeignKey, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -38,8 +38,8 @@ class DataToken(Base):
     contributor_phone_hash = Column(String(64), nullable=False, index=True)
 
     # Value
-    token_value_cfa = Column(Float, nullable=False)
-    token_value_usd = Column(Float)
+    token_value_cfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    token_value_usd = Column(Numeric(18, 2, asdecimal=False))
 
     # Location
     location_name = Column(String(200))
@@ -62,7 +62,7 @@ class DataToken(Base):
     paid_at = Column(DateTime, nullable=True)
 
     period_date = Column(Date, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -96,11 +96,11 @@ class DailyActivityDeclaration(Base):
     # Quantitative (optional)
     quantity_value = Column(Float)
     quantity_unit = Column(String(30))
-    price_local = Column(Float)
+    price_local = Column(Numeric(18, 2, asdecimal=False))
     local_currency = Column(String(5))
 
     # Payment
-    payment_amount_cfa = Column(Float, default=0.0)
+    payment_amount_cfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     payment_status = Column(String(20), default="pending")
     # pending | approved | paid | rejected
     payment_provider = Column(String(20))
@@ -114,7 +114,7 @@ class DailyActivityDeclaration(Base):
     proof_of_life_flag = Column(Boolean, default=True)
 
     data_source = Column(String(30), default="ussd_declaration")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -151,7 +151,7 @@ class BusinessDataSubmission(Base):
 
     # Tax credit
     tax_credit_rate_pct = Column(Float, nullable=False)
-    tax_credit_earned_cfa = Column(Float, default=0.0)
+    tax_credit_earned_cfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Validation
     validation_status = Column(String(20), default="submitted")
@@ -160,7 +160,7 @@ class BusinessDataSubmission(Base):
     validated_at = Column(DateTime)
 
     data_source = Column(String(30), default="ussd_business")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -187,20 +187,20 @@ class TaxCreditLedger(Base):
     # EARNED | USED | EXPIRED
     credit_type = Column(String(20), nullable=False)
     tier = Column(String(1), nullable=False)  # A | B | C
-    amount_cfa = Column(Float, nullable=False)
+    amount_cfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
 
     # Running totals
-    cumulative_earned_cfa = Column(Float, default=0.0)
-    cumulative_used_cfa = Column(Float, default=0.0)
+    cumulative_earned_cfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
+    cumulative_used_cfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     # Caps: 25% of tax liability, max 5M CFA/business/year
-    tax_liability_cfa = Column(Float)
+    tax_liability_cfa = Column(Numeric(18, 2, asdecimal=False))
     cap_pct = Column(Float, default=25.0)
-    cap_absolute_cfa = Column(Float, default=5_000_000.0)
+    cap_absolute_cfa = Column(Numeric(18, 2, asdecimal=False), default=5_000_000.0)
 
     submission_id = Column(Integer, ForeignKey("business_data_submissions.id"), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -227,7 +227,7 @@ class ContractMilestone(Base):
 
     milestone_number = Column(Integer, nullable=False)
     description = Column(Text, nullable=False)
-    value_cfa = Column(Float, nullable=False)
+    value_cfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     location_name = Column(String(200))
     location_region = Column(String(100))
 
@@ -246,8 +246,8 @@ class ContractMilestone(Base):
     payment_released = Column(Boolean, default=False)
     payment_released_at = Column(DateTime)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -281,7 +281,7 @@ class MilestoneVerification(Base):
     # Credibility: CITIZEN=1.0, INSPECTOR=3.0, CONTRACTOR=0.5
     credibility_weight = Column(Float, default=1.0)
 
-    verified_at = Column(DateTime, default=datetime.utcnow)
+    verified_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     milestone = relationship("ContractMilestone")
 
@@ -305,16 +305,16 @@ class FasoMeaboWorker(Base):
 
     # MASON | CARPENTER | LABORER | ELECTRICIAN | PLUMBER | WELDER | DRIVER | OTHER
     skill_type = Column(String(30), nullable=False)
-    daily_rate_cfa = Column(Float, nullable=False)
+    daily_rate_cfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
 
     is_active = Column(Boolean, default=True)
     total_days_worked = Column(Integer, default=0)
-    total_earned_cfa = Column(Float, default=0.0)
+    total_earned_cfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
 
     current_contract_id = Column(String(36), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 
@@ -345,11 +345,11 @@ class WorkerCheckIn(Base):
     verified = Column(Boolean, default=False)
     verified_by_phone_hash = Column(String(64))
 
-    daily_rate_cfa = Column(Float, nullable=False)
+    daily_rate_cfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
     # pending | approved | paid | rejected
     payment_status = Column(String(20), default="pending")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     worker = relationship("FasoMeaboWorker")
 
@@ -370,8 +370,8 @@ class PaymentDisbursement(Base):
     country_id = Column(Integer, ForeignKey("countries.id"), nullable=False, index=True)
 
     recipient_phone_hash = Column(String(64), nullable=False, index=True)
-    amount_cfa = Column(Float, nullable=False)
-    amount_usd = Column(Float)
+    amount_cfa = Column(Numeric(18, 2, asdecimal=False), nullable=False)
+    amount_usd = Column(Numeric(18, 2, asdecimal=False))
 
     # CITIZEN_DATA_INCOME | TAX_CREDIT | WORKER_WAGE | MILESTONE_RELEASE
     payment_type = Column(String(30), nullable=False, index=True)
@@ -392,7 +392,7 @@ class PaymentDisbursement(Base):
     batch_id = Column(String(36), index=True)
     batch_date = Column(Date)
 
-    queued_at = Column(DateTime, default=datetime.utcnow)
+    queued_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     processed_at = Column(DateTime)
     completed_at = Column(DateTime)
 
@@ -412,12 +412,12 @@ class TokenizationDailyAggregate(Base):
     # Pillar 1
     citizen_reports_count = Column(Integer, default=0)
     citizen_unique_reporters = Column(Integer, default=0)
-    citizen_total_paid_cfa = Column(Float, default=0.0)
+    citizen_total_paid_cfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     citizen_data_score = Column(Float)  # 0-100
 
     # Pillar 2
     business_submissions_count = Column(Integer, default=0)
-    business_tax_credits_cfa = Column(Float, default=0.0)
+    business_tax_credits_cfa = Column(Numeric(18, 2, asdecimal=False), default=0.0)
     business_data_score = Column(Float)  # 0-100
 
     # Pillar 3
@@ -434,7 +434,7 @@ class TokenizationDailyAggregate(Base):
     cross_validated_pct = Column(Float, default=0.0)
 
     confidence = Column(Float, default=0.30)
-    calculated_at = Column(DateTime, default=datetime.utcnow)
+    calculated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     country = relationship("Country")
 

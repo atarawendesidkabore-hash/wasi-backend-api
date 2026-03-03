@@ -184,8 +184,8 @@ class RiskEngine:
                     "detail": f"{len(active_events)} active events with net magnitude {negative_magnitude}",
                     "net_magnitude": negative_magnitude,
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Anomaly detection: news event query failed for %s: %s", cc, e)
 
         # Check data staleness
         if indices:
@@ -297,8 +297,8 @@ class RiskEngine:
                     if concentration > 50:
                         score = min(100, score + 15)
                         factors.append(f"High trade concentration: {concentration:.0f}% with top partner")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Trade risk: bilateral trade query failed for %s: %s", cc, e)
 
         return {"score": round(min(100, max(0, score)), 2), "factors": factors}
 
@@ -348,8 +348,8 @@ class RiskEngine:
 
                 if sub_scores:
                     score = sum(sub_scores) / len(sub_scores)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Macro risk: indicator query failed for %s: %s", cc, e)
 
         return {"score": round(min(100, max(0, score)), 2), "factors": factors}
 
@@ -381,8 +381,8 @@ class RiskEngine:
                 if political:
                     score += len(political) * 10
                     factors.append(f"{len(political)} active political risk events")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Political risk: news event query failed for %s: %s", cc, e)
 
         return {"score": round(min(100, max(0, score)), 2), "factors": factors}
 
@@ -451,8 +451,8 @@ class RiskEngine:
                 if avg_conf < 0.5:
                     score += 15
                     factors.append(f"Low forecast confidence ({avg_conf:.2f})")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Market risk: forecast query failed for %s: %s", cc, e)
 
         # WASI index recent volatility
         cutoff = date.today() - timedelta(days=30)

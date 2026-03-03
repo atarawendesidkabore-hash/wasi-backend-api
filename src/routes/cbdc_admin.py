@@ -16,7 +16,7 @@ Credit costs:
   GET  /aml/alerts                 — 2 credits
 """
 import uuid
-from datetime import datetime
+from datetime import timezone, datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 from slowapi import Limiter
@@ -303,7 +303,7 @@ async def resolve_aml_alert(
     alert.status = body.resolution_status
     alert.resolution_notes = body.resolution_notes
     alert.assigned_to = body.assigned_to
-    alert.resolved_at = datetime.utcnow()
+    alert.resolved_at = datetime.now(timezone.utc)
 
     if body.resolution_status == "resolved_sar":
         alert.sar_filed = True

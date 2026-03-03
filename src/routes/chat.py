@@ -12,7 +12,10 @@ The intelligence endpoint answers questions like:
 """
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 from typing import Optional
 
 import httpx
@@ -153,7 +156,7 @@ async def proxy_chat(
     try:
         result["content"][0]["text"] += _DISCLAIMER
     except (KeyError, IndexError):
-        pass
+        logger.warning("Chat response missing expected content structure; disclaimer not appended")
     return result
 
 
@@ -541,7 +544,7 @@ async def intelligence_chat(
         # Append financial disclaimer
         result["content"][0]["text"] += _DISCLAIMER
     except (KeyError, IndexError):
-        pass
+        logger.warning("Intelligence response missing expected content structure; disclaimer not appended")
 
     result["wasi_metadata"] = {
         "grounding_score": _grounding_score(context, answer_text),

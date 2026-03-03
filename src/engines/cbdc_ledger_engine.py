@@ -16,7 +16,7 @@ Thread-safety: relies on database-level row locking.
 """
 import math
 import uuid
-from datetime import datetime, date, timedelta
+from datetime import timezone, datetime, date, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -85,7 +85,7 @@ class CbdcLedgerEngine:
             self._check_balance_limit(target_wallet, amount_ecfa)
 
         tx_id = generate_transaction_id()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Create transaction record
         tx = CbdcTransaction(
@@ -151,7 +151,7 @@ class CbdcLedgerEngine:
             )
 
         tx_id = generate_transaction_id()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         tx = CbdcTransaction(
             transaction_id=tx_id,
@@ -305,7 +305,7 @@ class CbdcLedgerEngine:
 
         # 7. Execute
         tx_id = generate_transaction_id()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         is_cross_border = self._get_country_code(sender) != self._get_country_code(receiver)
 
@@ -386,7 +386,7 @@ class CbdcLedgerEngine:
                 detail="Wallet is already frozen",
             )
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         target.status = "frozen"
         target.freeze_reason = reason
         target.frozen_at = now
@@ -484,7 +484,7 @@ class CbdcLedgerEngine:
 
         Lock order: sort wallet IDs to prevent deadlocks.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Fetch wallets in sorted order
         ids = sorted([debit_wallet_id, credit_wallet_id])
@@ -618,11 +618,14 @@ class CbdcLedgerEngine:
         """Verify PIN with lockout protection."""
         from src.utils.cbdc_audit import log_pin_locked
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
-        # Check lockout
-        if wallet.pin_locked_until and wallet.pin_locked_until > now:
-            remaining = (wallet.pin_locked_until - now).seconds // 60
+        # Check lockout (ensure timezone-aware comparison — SQLite stores naive)
+        pin_locked = wallet.pin_locked_until
+        if pin_locked and pin_locked.tzinfo is None:
+            pin_locked = pin_locked.replace(tzinfo=timezone.utc)
+        if pin_locked and pin_locked > now:
+            remaining = (pin_locked - now).seconds // 60
             raise HTTPException(
                 status_code=status.HTTP_423_LOCKED,
                 detail=f"PIN locked. Try again in {remaining + 1} minutes.",
@@ -668,7 +671,7 @@ class CbdcLedgerEngine:
         if not policy:
             return  # No active policy — allow
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if policy.effective_until and policy.effective_until < now:
             return  # Expired policy
 

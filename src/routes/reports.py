@@ -4,7 +4,7 @@ Reports routes — structured JSON reports for export and consumption by clients
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import date, datetime, timedelta
+from datetime import timezone, date, datetime, timedelta
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
@@ -104,7 +104,7 @@ async def get_executive_summary(
 
     return ExecutiveSummary(
         report_date=date.today(),
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
         composite_latest=latest_composite.composite_value if latest_composite else None,
         composite_period=latest_composite.period_date if latest_composite else None,
         trend_direction=latest_composite.trend_direction if latest_composite else None,
@@ -225,7 +225,7 @@ async def get_full_report(
 
     summary = ExecutiveSummary(
         report_date=date.today(),
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
         composite_latest=latest.composite_value if latest else None,
         composite_period=latest.period_date if latest else None,
         trend_direction=latest.trend_direction if latest else None,
@@ -255,5 +255,5 @@ async def get_full_report(
         monthly_history=monthly,
         country_breakdown=country_breakdown,
         country_contributions=contributions,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
     )

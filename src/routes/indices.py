@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
-from datetime import datetime, date, timedelta
+from datetime import timezone, datetime, date, timedelta
 from src.database.connection import get_db
 from src.database.models import User, Country, CountryIndex, WASIComposite
 from src.schemas.index import AllIndicesResponse, CountryIndexResponse
@@ -47,7 +47,7 @@ async def get_latest_indices(
             period_date=date.today(),
             indices={},
             confidence_indicators={},
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
         )
 
     indices = {row.Country.code: row.CountryIndex.index_value for row in rows}
@@ -71,7 +71,7 @@ async def get_latest_indices(
         period_date=max_date,
         indices=indices,
         confidence_indicators=confidence_indicators,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
     )
 
 

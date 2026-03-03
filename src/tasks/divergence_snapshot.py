@@ -11,7 +11,7 @@ Called from wasi_data_scheduler.py after stock market data is fetched.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import timezone, date, datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -148,7 +148,7 @@ def save_divergence_snapshot(db: Session | None = None) -> int:
                 signal=div.signal,
                 liquidity_flag=div.liquidity_flag,
                 volume_usd=div.volume_usd,
-                computed_at=datetime.utcnow(),
+                computed_at=datetime.now(timezone.utc),
             ))
             inserted += 1
 

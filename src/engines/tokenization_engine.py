@@ -10,7 +10,7 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, date
+from datetime import timezone, datetime, date
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -361,7 +361,7 @@ class TokenizationEngine:
             worker_id=worker.id,
             contract_id=contract_id,
             check_in_date=today,
-            check_in_time=datetime.utcnow(),
+            check_in_time=datetime.now(timezone.utc),
             location_lat=location_lat,
             location_lon=location_lon,
             location_name=location_name,
@@ -748,7 +748,7 @@ class PaymentDisbursementEngine:
         self.db.add(disbursement)
 
         milestone.payment_released = True
-        milestone.payment_released_at = datetime.utcnow()
+        milestone.payment_released_at = datetime.now(timezone.utc)
         milestone.status = "paid"
 
         self.db.flush()
@@ -773,13 +773,13 @@ class PaymentDisbursementEngine:
 
         for p in pending:
             p.batch_id = batch_id
-            p.processed_at = datetime.utcnow()
+            p.processed_at = datetime.now(timezone.utc)
 
             # Try eCFA wallet first
             ecfa_ok = self._try_ecfa_payment(p)
             if ecfa_ok:
                 p.status = "completed"
-                p.completed_at = datetime.utcnow()
+                p.completed_at = datetime.now(timezone.utc)
                 completed += 1
                 total_cfa += p.amount_cfa
                 continue
@@ -791,7 +791,7 @@ class PaymentDisbursementEngine:
             if ref:
                 p.mobile_money_ref = ref
                 p.status = "completed"
-                p.completed_at = datetime.utcnow()
+                p.completed_at = datetime.now(timezone.utc)
                 completed += 1
                 total_cfa += p.amount_cfa
             else:

@@ -10,7 +10,7 @@ admin actions, PIN events, mint/burn, settlement confirmations, AML alerts.
 import hashlib
 import json
 import uuid
-from datetime import datetime
+from datetime import timezone, datetime
 
 from sqlalchemy.orm import Session
 
@@ -59,7 +59,7 @@ def log_audit_event(
     Returns:
         The created CbdcAuditLog instance.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     details_json = json.dumps(details, default=str) if details else None
 
     entry_hash = _compute_audit_hash(

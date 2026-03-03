@@ -12,7 +12,7 @@ Spread model (per currency volatility tier):
 """
 import uuid
 import logging
-from datetime import datetime, timedelta, date
+from datetime import timezone, datetime, timedelta, date
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -82,8 +82,8 @@ class CbdcFxEngine:
                 detail=f"No FX rate found for XOF→{target_currency}",
             )
 
-        staleness = (datetime.utcnow() - datetime.combine(
-            fx.effective_date, datetime.min.time()
+        staleness = (datetime.now(timezone.utc) - datetime.combine(
+            fx.effective_date, datetime.min.time(), tzinfo=timezone.utc
         )).total_seconds() / 3600.0
 
         spread = SPREAD_TIERS.get(target_currency, 0.0035)
@@ -160,7 +160,7 @@ class CbdcFxEngine:
 
         rate_info = self.get_rate(target_currency)
         lock_id = str(uuid.uuid4())
-        expires_at = datetime.utcnow() + timedelta(seconds=duration_sec)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=duration_sec)
 
         lock = CbdcRateLock(
             lock_id=lock_id,
@@ -198,14 +198,17 @@ class CbdcFxEngine:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Rate lock already consumed",
             )
-        if lock.expires_at < datetime.utcnow():
+        expires = lock.expires_at
+        if expires and expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Rate lock has expired",
             )
 
         lock.consumed = True
-        lock.consumed_at = datetime.utcnow()
+        lock.consumed_at = datetime.now(timezone.utc)
         lock.payment_id = payment_id
 
         return {
