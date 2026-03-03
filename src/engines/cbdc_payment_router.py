@@ -325,8 +325,8 @@ class CbdcPaymentRouter:
                     amount_ecfa=amount,
                     tx_type="TRANSFER_P2P",
                     channel="API",
-                    pin=pin,
                     fee_ecfa=platform_fee,
+                    _system_auth=True,
                 )
                 payment.source_tx_id = tx_result["transaction_id"]
                 payment.dest_tx_id = tx_result["transaction_id"]
@@ -349,8 +349,8 @@ class CbdcPaymentRouter:
                     amount_ecfa=amount + platform_fee,
                     tx_type="CROSS_BORDER",
                     channel="API",
-                    pin=pin,
                     fee_ecfa=0.0,
+                    _system_auth=True,
                 )
                 payment.source_tx_id = tx_result["transaction_id"]
 
@@ -408,6 +408,7 @@ class CbdcPaymentRouter:
                         tx_type="CROSS_BORDER",
                         channel="API",
                         fee_ecfa=0.0,
+                        _system_auth=True,
                     )
                     payment.source_tx_id = bridge_result["bridge_ref"]
                     payment.dest_tx_id = tx_result["transaction_id"]
