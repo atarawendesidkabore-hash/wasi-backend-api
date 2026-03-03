@@ -247,6 +247,10 @@ class USSDMenuEngine:
                 "9. Faso Meabo check-in"
             )
             session_type = "MENU"
+        elif parts[0] == "0":
+            response, session_type = self._handle_route_report(
+                parts[1:], country_code, phone_hash
+            )
         elif parts[0] == "1":
             response, session_type = self._handle_commodity_menu(
                 parts[1:], country_code, phone_hash
@@ -307,6 +311,292 @@ class USSDMenuEngine:
         return response, session_type
 
     # ── Menu handlers ─────────────────────────────────────────────────
+
+    def _handle_route_report(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Option 0: Crowdsourced route/corridor report."""
+        # Step 0: Select corridor
+        if len(parts) == 0:
+            lines = ["CON Rapport Route — Corridor:"]
+            for k, (_, _, _, desc) in CORRIDORS.items():
+                lines.append(f"{k}. {desc}")
+            return "\n".join(lines), "ROUTE_REPORT"
+
+        # Step 1: Corridor selected → ask report type
+        if len(parts) == 1:
+            if parts[0] not in CORRIDORS:
+                return "END Corridor invalide.", "ERROR"
+            lines = ["CON Type de rapport:"]
+            for k, (_, name) in REPORT_TYPES.items():
+                lines.append(f"{k}. {name}")
+            return "\n".join(lines), "ROUTE_REPORT"
+
+        # Step 2: Report type selected → ask reporter type
+        if len(parts) == 2:
+            if parts[1] not in REPORT_TYPES:
+                return "END Type invalide.", "ERROR"
+            lines = ["CON Vous êtes:"]
+            for k, (_, name) in REPORTER_TYPES.items():
+                lines.append(f"{k}. {name}")
+            return "\n".join(lines), "ROUTE_REPORT"
+
+        # Step 3: Reporter type → ask data value (varies by report type)
+        if len(parts) == 3:
+            if parts[2] not in REPORTER_TYPES:
+                return "END Choix invalide.", "ERROR"
+            rtype_code = REPORT_TYPES.get(parts[1], ("ROAD_CONDITION",))[0]
+            if rtype_code == "ROAD_CONDITION":
+                lines = ["CON État de la route:"]
+                for k, (_, name) in ROAD_SURFACES.items():
+                    lines.append(f"{k}. {name}")
+                return "\n".join(lines), "ROUTE_REPORT"
+            elif rtype_code == "BORDER_WAIT":
+                return (
+                    "CON Temps d'attente frontière\n"
+                    "en heures (ex: 6):"
+                ), "ROUTE_REPORT"
+            elif rtype_code == "FUEL_PRICE":
+                lines = ["CON Type carburant:"]
+                for k, (_, name) in FUEL_TYPES.items():
+                    lines.append(f"{k}. {name}")
+                return "\n".join(lines), "ROUTE_REPORT"
+            elif rtype_code == "TRANSIT_TIME":
+                corridor_name = CORRIDORS.get(parts[0], ("?", "?", "?", "?"))[3]
+                return (
+                    f"CON Temps trajet {corridor_name}\n"
+                    "en heures (ex: 14):"
+                ), "ROUTE_REPORT"
+            return "END Erreur type rapport.", "ERROR"
+
+        # Step 4: Data entered → confirm (or sub-step for fuel)
+        if len(parts) == 4:
+            rtype_code = REPORT_TYPES.get(parts[1], ("ROAD_CONDITION",))[0]
+            corridor_name = CORRIDORS.get(parts[0], ("?", "?", "?", "?"))[3]
+
+            if rtype_code == "ROAD_CONDITION":
+                if parts[3] not in ROAD_SURFACES:
+                    return "END Choix invalide.", "ERROR"
+                _, surface_name = ROAD_SURFACES[parts[3]]
+                return (
+                    f"CON Confirmer rapport:\n"
+                    f"Route: {corridor_name}\n"
+                    f"État: {surface_name}\n"
+                    f"Paiement: 50 FCFA\n"
+                    f"1. Confirmer\n"
+                    f"2. Annuler"
+                ), "ROUTE_REPORT"
+            elif rtype_code == "BORDER_WAIT":
+                try:
+                    hours = float(parts[3])
+                except ValueError:
+                    return "END Durée invalide.", "ERROR"
+                return (
+                    f"CON Confirmer rapport:\n"
+                    f"Route: {corridor_name}\n"
+                    f"Attente: {hours:.0f}h\n"
+                    f"Paiement: 50 FCFA\n"
+                    f"1. Confirmer\n"
+                    f"2. Annuler"
+                ), "ROUTE_REPORT"
+            elif rtype_code == "FUEL_PRICE":
+                if parts[3] not in FUEL_TYPES:
+                    return "END Type invalide.", "ERROR"
+                currency = COUNTRY_CURRENCY.get(country_code, "XOF")
+                _, fuel_name = FUEL_TYPES[parts[3]]
+                return (
+                    f"CON {fuel_name}\n"
+                    f"Prix par litre en {currency}:"
+                ), "ROUTE_REPORT"
+            elif rtype_code == "TRANSIT_TIME":
+                try:
+                    hours = float(parts[3])
+                except ValueError:
+                    return "END Durée invalide.", "ERROR"
+                return (
+                    f"CON Confirmer rapport:\n"
+                    f"Route: {corridor_name}\n"
+                    f"Trajet: {hours:.0f}h\n"
+                    f"Paiement: 50 FCFA\n"
+                    f"1. Confirmer\n"
+                    f"2. Annuler"
+                ), "ROUTE_REPORT"
+            return "END Erreur.", "ERROR"
+
+        # Step 5: Confirmation for non-fuel, or fuel price entry
+        if len(parts) == 5:
+            rtype_code = REPORT_TYPES.get(parts[1], ("ROAD_CONDITION",))[0]
+            corridor_name = CORRIDORS.get(parts[0], ("?", "?", "?", "?"))[3]
+
+            if rtype_code == "FUEL_PRICE":
+                # This is the fuel price value → show confirmation
+                try:
+                    price = float(parts[4])
+                except ValueError:
+                    return "END Prix invalide.", "ERROR"
+                _, fuel_name = FUEL_TYPES.get(parts[3], ("DIESEL", "Diesel"))
+                currency = COUNTRY_CURRENCY.get(country_code, "XOF")
+                return (
+                    f"CON Confirmer rapport:\n"
+                    f"Route: {corridor_name}\n"
+                    f"{fuel_name}: {price:.0f} {currency}/L\n"
+                    f"Paiement: 50 FCFA\n"
+                    f"1. Confirmer\n"
+                    f"2. Annuler"
+                ), "ROUTE_REPORT"
+            else:
+                # Confirmation for ROAD_CONDITION, BORDER_WAIT, TRANSIT_TIME
+                if parts[4] == "2":
+                    return "END Rapport annulé.", "ROUTE_REPORT"
+                if parts[4] == "1":
+                    return self._save_route_report(parts, country_code, phone_hash)
+                return "END Choix invalide.", "ERROR"
+
+        # Step 6: Fuel price confirmation
+        if len(parts) == 6:
+            if parts[5] == "2":
+                return "END Rapport annulé.", "ROUTE_REPORT"
+            if parts[5] == "1":
+                return self._save_route_report(parts, country_code, phone_hash)
+            return "END Choix invalide.", "ERROR"
+
+        return "END Session expirée. Recomposez *384*WASI#", "ROUTE_REPORT"
+
+    def _save_route_report(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Persist route report and trigger tokenization reward."""
+        try:
+            corridor_code, origin_cc, _, corridor_name = CORRIDORS.get(
+                parts[0], ("?", country_code, "??", "?")
+            )
+            rtype_code, rtype_name = REPORT_TYPES.get(parts[1], ("ROAD_CONDITION", "Route"))
+            reporter_code = REPORTER_TYPES.get(parts[2], ("TRAVELER",))[0]
+            currency = COUNTRY_CURRENCY.get(country_code, "XOF")
+
+            # Resolve country (use corridor origin)
+            report_cc = origin_cc
+            country = self.db.query(Country).filter(Country.code == report_cc).first()
+            if not country:
+                country = self.db.query(Country).filter(Country.code == country_code).first()
+            if not country:
+                return "END Erreur pays.", "ERROR"
+
+            today = date.today()
+
+            # Parse report-type-specific data
+            road_surface = None
+            condition_score = None
+            wait_hours = None
+            fuel_type = None
+            fuel_price_local = None
+            transit_hours = None
+
+            if rtype_code == "ROAD_CONDITION":
+                surface_code = ROAD_SURFACES.get(parts[3], ("PAVED",))[0]
+                road_surface = surface_code
+                condition_score = float(SURFACE_SCORES.get(surface_code, 50))
+            elif rtype_code == "BORDER_WAIT":
+                try:
+                    wait_hours = float(parts[3])
+                except ValueError:
+                    wait_hours = 0.0
+            elif rtype_code == "FUEL_PRICE":
+                fuel_type = FUEL_TYPES.get(parts[3], ("DIESEL",))[0]
+                try:
+                    fuel_price_local = float(parts[4])
+                except (ValueError, IndexError):
+                    fuel_price_local = 0.0
+            elif rtype_code == "TRANSIT_TIME":
+                try:
+                    transit_hours = float(parts[3])
+                except ValueError:
+                    transit_hours = 0.0
+
+            # Upsert: aggregate if report exists for same corridor/date/type
+            existing = (
+                self.db.query(USSDRouteReport)
+                .filter(
+                    USSDRouteReport.country_id == country.id,
+                    USSDRouteReport.period_date == today,
+                    USSDRouteReport.corridor_code == corridor_code,
+                    USSDRouteReport.report_type == rtype_code,
+                )
+                .first()
+            )
+
+            if existing:
+                n = existing.reporter_count
+                if condition_score is not None and existing.condition_score is not None:
+                    existing.condition_score = (existing.condition_score * n + condition_score) / (n + 1)
+                elif condition_score is not None:
+                    existing.condition_score = condition_score
+                if wait_hours is not None and existing.wait_hours is not None:
+                    existing.wait_hours = (existing.wait_hours * n + wait_hours) / (n + 1)
+                elif wait_hours is not None:
+                    existing.wait_hours = wait_hours
+                if fuel_price_local is not None and existing.fuel_price_local is not None:
+                    existing.fuel_price_local = (existing.fuel_price_local * n + fuel_price_local) / (n + 1)
+                    existing.fuel_price_usd = _to_usd(existing.fuel_price_local, currency)
+                elif fuel_price_local is not None:
+                    existing.fuel_price_local = fuel_price_local
+                    existing.fuel_price_usd = _to_usd(fuel_price_local, currency)
+                if transit_hours is not None and existing.transit_hours is not None:
+                    existing.transit_hours = (existing.transit_hours * n + transit_hours) / (n + 1)
+                elif transit_hours is not None:
+                    existing.transit_hours = transit_hours
+                if road_surface:
+                    existing.road_surface = road_surface
+                existing.reporter_count = n + 1
+                existing.confidence = min(0.90, 0.40 + 0.05 * existing.reporter_count)
+            else:
+                report = USSDRouteReport(
+                    country_id=country.id,
+                    period_date=today,
+                    corridor_code=corridor_code,
+                    corridor_name=corridor_name,
+                    report_type=rtype_code,
+                    road_surface=road_surface,
+                    condition_score=condition_score,
+                    wait_hours=wait_hours,
+                    fuel_type=fuel_type,
+                    fuel_price_local=fuel_price_local,
+                    fuel_price_usd=_to_usd(fuel_price_local, currency) if fuel_price_local else None,
+                    transit_hours=transit_hours,
+                    local_currency=currency,
+                    reporter_phone_hash=phone_hash,
+                    reporter_type=reporter_code,
+                    confidence=0.45,
+                )
+                self.db.add(report)
+
+            self.db.commit()
+
+            # Trigger tokenization reward (ROAD_CONDITION = 50 CFA)
+            try:
+                from src.engines.tokenization_engine import TokenizationEngine
+                tok_engine = TokenizationEngine(self.db)
+                tok_engine.create_citizen_token(
+                    country_code=report_cc,
+                    phone_hash=phone_hash,
+                    activity_type="ROAD_CONDITION",
+                    location_name=corridor_name,
+                    details=f"{rtype_code}:{corridor_code}",
+                )
+            except Exception:
+                pass  # Reward is best-effort; don't fail the report
+
+            return (
+                f"END Merci! Rapport enregistré.\n"
+                f"Route: {corridor_name}\n"
+                f"Type: {rtype_name}\n"
+                f"Paiement: 50 FCFA\n"
+                f"WASI vous remercie!"
+            ), "ROUTE_REPORT"
+
+        except Exception as exc:
+            logger.error("Route report save failed: %s", exc)
+            return "END Erreur technique. Réessayez.", "ERROR"
 
     def _handle_commodity_menu(
         self, parts: list, country_code: str, phone_hash: str
@@ -1199,10 +1489,11 @@ class USSDDataAggregator:
     """
 
     WEIGHTS = {
-        "mobile_money": 0.30,
-        "commodity": 0.20,
-        "informal_trade": 0.25,
-        "port_efficiency": 0.25,
+        "mobile_money": 0.25,
+        "commodity": 0.15,
+        "informal_trade": 0.20,
+        "port_efficiency": 0.20,
+        "route_condition": 0.20,
     }
 
     def __init__(self, db: Session):
@@ -1224,6 +1515,7 @@ class USSDDataAggregator:
         commodity_score = self._score_commodity_prices(country.id, target_date)
         trade_score = self._score_informal_trade(country.id, target_date)
         port_score = self._score_port_efficiency(country.id, target_date)
+        route_score = self._score_route_condition(country.id, target_date)
 
         # Count data points
         data_points = self._count_data_points(country.id, target_date)
@@ -1239,6 +1531,8 @@ class USSDDataAggregator:
             scores["informal_trade"] = trade_score
         if port_score is not None:
             scores["port_efficiency"] = port_score
+        if route_score is not None:
+            scores["route_condition"] = route_score
 
         if scores:
             total_weight = sum(self.WEIGHTS[k] for k in scores)
@@ -1269,6 +1563,7 @@ class USSDDataAggregator:
             "commodity_price_score": commodity_score,
             "informal_trade_score": trade_score,
             "port_efficiency_score": port_score,
+            "route_condition_score": route_score,
             "ussd_composite_score": round(composite, 4) if composite else None,
             "data_points": data_points,
             "providers_reporting": providers,
@@ -1280,6 +1575,7 @@ class USSDDataAggregator:
             existing.commodity_price_score = commodity_score
             existing.informal_trade_score = trade_score
             existing.port_efficiency_score = port_score
+            existing.route_condition_score = route_score
             existing.ussd_composite_score = composite
             existing.data_points_count = data_points
             existing.providers_reporting = providers
@@ -1293,6 +1589,7 @@ class USSDDataAggregator:
                 commodity_price_score=commodity_score,
                 informal_trade_score=trade_score,
                 port_efficiency_score=port_score,
+                route_condition_score=route_score,
                 ussd_composite_score=composite,
                 data_points_count=data_points,
                 providers_reporting=providers,
@@ -1444,6 +1741,40 @@ class USSDDataAggregator:
         score = max(0, 100 - (avg_delay / 480) * 100)
         return round(score, 2)
 
+    def _score_route_condition(self, country_id: int, target_date: date) -> Optional[float]:
+        """Score 0-100 based on crowdsourced route condition reports."""
+        reports = (
+            self.db.query(USSDRouteReport)
+            .filter(
+                USSDRouteReport.country_id == country_id,
+                USSDRouteReport.period_date == target_date,
+            )
+            .all()
+        )
+        if not reports:
+            return None
+
+        scores = []
+        for r in reports:
+            if r.report_type == "ROAD_CONDITION" and r.condition_score is not None:
+                scores.append(r.condition_score)
+            elif r.report_type == "BORDER_WAIT" and r.wait_hours is not None:
+                # Lower wait = higher score. 0h=100, 72h=0
+                scores.append(max(0, 100 - (r.wait_hours / 72) * 100))
+            elif r.report_type == "TRANSIT_TIME" and r.transit_hours is not None:
+                # Faster transit = higher score. 0h=100, 168h(7d)=0
+                scores.append(max(0, 100 - (r.transit_hours / 168) * 100))
+
+        if not scores:
+            return None
+
+        avg_score = sum(scores) / len(scores)
+        # Boost for more reporters (data quality)
+        total_reporters = sum(r.reporter_count for r in reports)
+        quality_boost = min(10, total_reporters * 0.5)
+
+        return round(min(100, avg_score + quality_boost), 2)
+
     def _count_data_points(self, country_id: int, target_date: date) -> int:
         """Count total USSD data points for the day."""
         money = (
@@ -1478,7 +1809,15 @@ class USSDDataAggregator:
             )
             .scalar()
         ) or 0
-        return int(money + commodity + trade + port)
+        route = (
+            self.db.query(func.sum(USSDRouteReport.reporter_count))
+            .filter(
+                USSDRouteReport.country_id == country_id,
+                USSDRouteReport.period_date == target_date,
+            )
+            .scalar()
+        ) or 0
+        return int(money + commodity + trade + port + route)
 
     def _count_providers(self, country_id: int, target_date: date) -> int:
         """Count distinct MNO providers reporting for this country today."""

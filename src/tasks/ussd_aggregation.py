@@ -40,6 +40,7 @@ def run_ussd_aggregation(db=None) -> dict:
     from src.database.ussd_models import (
         USSDMobileMoneyFlow, USSDCommodityReport,
         USSDTradeDeclaration, USSDPortClearance,
+        USSDRouteReport,
     )
 
     own_session = db is None
@@ -55,6 +56,7 @@ def run_ussd_aggregation(db=None) -> dict:
             select(USSDCommodityReport.period_date),
             select(USSDTradeDeclaration.period_date),
             select(USSDPortClearance.period_date),
+            select(USSDRouteReport.period_date),
         )
         all_dates = sorted(
             {row[0] for row in db.execute(q).fetchall() if row[0] is not None}
@@ -106,6 +108,125 @@ def run_ussd_aggregation(db=None) -> dict:
             "error": str(exc),
             "computed_at": datetime.now(timezone.utc).isoformat(),
         }
+    finally:
+        if own_session:
+            db.close()
+
+
+def bridge_route_to_road_corridors(db=None) -> dict:
+    """
+    Bridge crowdsourced USSDRouteReport data into the RoadCorridor model.
+
+    For each corridor with USSD reports today:
+      - road_quality_score = weighted avg of condition_score reports
+      - border_wait_hours = avg of border wait reports
+      - avg_transit_days = avg of transit_time reports / 24
+      - Confidence blended: existing * 0.6 + ussd * 0.4
+    """
+    from collections import defaultdict
+    from src.database.ussd_models import USSDRouteReport
+    from src.database.models import RoadCorridor, Country
+
+    own_session = db is None
+    if own_session:
+        db = SessionLocal()
+
+    try:
+        today = date.today()
+        period = today.replace(day=1)  # RoadCorridor uses monthly periods
+
+        reports = (
+            db.query(USSDRouteReport)
+            .filter(USSDRouteReport.period_date == today)
+            .all()
+        )
+
+        if not reports:
+            return {"status": "no_data", "corridors_updated": 0}
+
+        grouped = defaultdict(list)
+        for r in reports:
+            grouped[(r.country_id, r.corridor_code)].append(r)
+
+        updated = 0
+        for (country_id, corridor_code), group in grouped.items():
+            condition_scores = [
+                r.condition_score for r in group
+                if r.report_type == "ROAD_CONDITION" and r.condition_score is not None
+            ]
+            wait_hours_list = [
+                r.wait_hours for r in group
+                if r.report_type == "BORDER_WAIT" and r.wait_hours is not None
+            ]
+            transit_hours_list = [
+                r.transit_hours for r in group
+                if r.report_type == "TRANSIT_TIME" and r.transit_hours is not None
+            ]
+            total_reporters = sum(r.reporter_count for r in group)
+
+            existing = (
+                db.query(RoadCorridor)
+                .filter(
+                    RoadCorridor.country_id == country_id,
+                    RoadCorridor.period_date == period,
+                    RoadCorridor.corridor_name == corridor_code,
+                )
+                .first()
+            )
+
+            if existing:
+                if condition_scores:
+                    ussd_quality = sum(condition_scores) / len(condition_scores)
+                    if existing.road_quality_score is not None:
+                        existing.road_quality_score = existing.road_quality_score * 0.6 + ussd_quality * 0.4
+                    else:
+                        existing.road_quality_score = ussd_quality
+                if wait_hours_list:
+                    ussd_wait = sum(wait_hours_list) / len(wait_hours_list)
+                    if existing.border_wait_hours is not None:
+                        existing.border_wait_hours = existing.border_wait_hours * 0.6 + ussd_wait * 0.4
+                    else:
+                        existing.border_wait_hours = ussd_wait
+                if transit_hours_list:
+                    ussd_transit_days = (sum(transit_hours_list) / len(transit_hours_list)) / 24.0
+                    if existing.avg_transit_days is not None:
+                        existing.avg_transit_days = existing.avg_transit_days * 0.6 + ussd_transit_days * 0.4
+                    else:
+                        existing.avg_transit_days = ussd_transit_days
+                existing.confidence = min(0.85, (existing.confidence or 0.65) + 0.02 * total_reporters)
+                existing.data_source = "corridor_estimate+ussd"
+            else:
+                corridor_name = group[0].corridor_name if group else corridor_code
+                avg_quality = sum(condition_scores) / len(condition_scores) if condition_scores else None
+                avg_wait = sum(wait_hours_list) / len(wait_hours_list) if wait_hours_list else None
+                avg_transit = (sum(transit_hours_list) / len(transit_hours_list) / 24.0) if transit_hours_list else None
+
+                road = RoadCorridor(
+                    country_id=country_id,
+                    period_date=period,
+                    corridor_name=corridor_code,
+                    road_quality_score=avg_quality,
+                    border_wait_hours=avg_wait,
+                    avg_transit_days=avg_transit,
+                    truck_count=total_reporters,
+                    data_source="ussd_crowdsource",
+                    confidence=min(0.70, 0.35 + 0.05 * total_reporters),
+                )
+                db.add(road)
+
+            updated += 1
+
+        db.commit()
+        return {
+            "status": "completed",
+            "corridors_updated": updated,
+            "total_reporters": sum(r.reporter_count for r in reports),
+        }
+
+    except Exception as exc:
+        logger.error("Route-to-corridor bridge failed: %s", exc)
+        db.rollback()
+        return {"status": "error", "error": str(exc)}
     finally:
         if own_session:
             db.close()
@@ -316,6 +437,77 @@ def seed_ussd_demo_data(db=None) -> int:
                     confidence=0.65,
                 )
                 db.add(clearance)
+                count += 1
+
+        # Demo route reports (7 days, 6 key corridors)
+        from src.database.ussd_models import USSDRouteReport
+
+        corridors_demo = [
+            ("ABIDJAN-OUAGADOUGOU", "CI", "Abidjan - Ouagadougou"),
+            ("TEMA-OUAGADOUGOU", "GH", "Tema - Ouagadougou"),
+            ("DAKAR-BAMAKO", "SN", "Dakar - Bamako"),
+            ("LAGOS-COTONOU", "NG", "Lagos - Cotonou"),
+            ("ABIDJAN-BAMAKO", "CI", "Abidjan - Bamako"),
+            ("LOME-NIAMEY", "TG", "Lomé - Niamey"),
+        ]
+        surfaces = ["PAVED", "PAVED", "PAVED", "GRAVEL", "DIRT"]
+        surface_scores_map = {"PAVED": 85, "GRAVEL": 55, "DIRT": 30, "FLOODED": 10}
+
+        for corridor_code, cc, corridor_name in corridors_demo:
+            country = db.query(Country).filter(Country.code == cc).first()
+            if not country:
+                continue
+            currency = "XOF" if cc != "NG" else "NGN"
+
+            for day_offset in range(7):
+                d = today - timedelta(days=day_offset)
+                surface = random.choice(surfaces)
+                # Road condition report
+                db.add(USSDRouteReport(
+                    country_id=country.id,
+                    period_date=d,
+                    corridor_code=corridor_code,
+                    corridor_name=corridor_name,
+                    report_type="ROAD_CONDITION",
+                    road_surface=surface,
+                    condition_score=float(surface_scores_map.get(surface, 50)),
+                    reporter_phone_hash="demo_hash",
+                    reporter_type=random.choice(["TRUCKER", "TRADER", "TRAVELER"]),
+                    reporter_count=random.randint(3, 15),
+                    local_currency=currency,
+                    confidence=0.55,
+                ))
+                count += 1
+                # Border wait report
+                db.add(USSDRouteReport(
+                    country_id=country.id,
+                    period_date=d,
+                    corridor_code=corridor_code,
+                    corridor_name=corridor_name,
+                    report_type="BORDER_WAIT",
+                    wait_hours=random.uniform(2, 24),
+                    queue_vehicles=random.randint(5, 80),
+                    reporter_phone_hash="demo_hash",
+                    reporter_type="TRUCKER",
+                    reporter_count=random.randint(2, 10),
+                    local_currency=currency,
+                    confidence=0.50,
+                ))
+                count += 1
+                # Transit time report
+                db.add(USSDRouteReport(
+                    country_id=country.id,
+                    period_date=d,
+                    corridor_code=corridor_code,
+                    corridor_name=corridor_name,
+                    report_type="TRANSIT_TIME",
+                    transit_hours=random.uniform(8, 48),
+                    reporter_phone_hash="demo_hash",
+                    reporter_type="TRUCKER",
+                    reporter_count=random.randint(2, 8),
+                    local_currency=currency,
+                    confidence=0.50,
+                ))
                 count += 1
 
         db.commit()

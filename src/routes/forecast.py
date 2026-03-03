@@ -27,6 +27,7 @@ from src.schemas.forecast import (
 )
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.periods import parse_quarter
 from src.tasks.forecast_task import run_forecast_update, _persist_forecast
 
 logger = logging.getLogger(__name__)
@@ -51,10 +52,13 @@ def _get_cached_forecast(
     target_type: str,
     target_code: str,
     horizon: int,
+    quarter: Optional[str] = None,
 ) -> Optional[ForecastResponse]:
-    """Return cached forecast if fresh enough, else None."""
+    """Return cached forecast if fresh enough, else None.
+    When quarter is provided, only return forecast periods within that quarter.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=CACHE_MAX_AGE_HOURS)
-    rows = (
+    query = (
         db.query(ForecastResult)
         .filter(
             ForecastResult.target_type == target_type,
@@ -62,9 +66,12 @@ def _get_cached_forecast(
             ForecastResult.horizon_months == horizon,
             ForecastResult.calculated_at >= cutoff,
         )
-        .order_by(ForecastResult.period_date.asc())
-        .all()
     )
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        query = query.filter(ForecastResult.period_date.between(q_start, q_end))
+
+    rows = query.order_by(ForecastResult.period_date.asc()).all()
     if not rows:
         return None
 
@@ -126,6 +133,7 @@ def _build_response(result: dict) -> ForecastResponse:
 @router.get("/composite", response_model=ForecastResponse)
 async def forecast_composite(
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
+    quarter: Optional[str] = Query(default=None, description="Filter forecast periods by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -135,7 +143,7 @@ async def forecast_composite(
     if horizon not in VALID_HORIZONS:
         raise HTTPException(status_code=400, detail=f"horizon must be one of {sorted(VALID_HORIZONS)}")
 
-    cached = _get_cached_forecast(db, "composite_index", "WASI_COMPOSITE", horizon)
+    cached = _get_cached_forecast(db, "composite_index", "WASI_COMPOSITE", horizon, quarter)
     if cached:
         return cached
 
@@ -262,6 +270,7 @@ async def refresh_forecasts(
 async def forecast_commodity(
     commodity_code: str,
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
+    quarter: Optional[str] = Query(default=None, description="Filter forecast periods by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -275,7 +284,7 @@ async def forecast_commodity(
     if horizon not in VALID_HORIZONS:
         raise HTTPException(status_code=400, detail=f"horizon must be one of {sorted(VALID_HORIZONS)}")
 
-    cached = _get_cached_forecast(db, "commodity_price", code, horizon)
+    cached = _get_cached_forecast(db, "commodity_price", code, horizon, quarter)
     if cached:
         return cached
 
@@ -303,6 +312,7 @@ async def forecast_commodity(
 async def forecast_country_index(
     country_code: str,
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
+    quarter: Optional[str] = Query(default=None, description="Filter forecast periods by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -317,7 +327,7 @@ async def forecast_country_index(
     if not country:
         raise HTTPException(status_code=404, detail="Country not found")
 
-    cached = _get_cached_forecast(db, "country_index", cc, horizon)
+    cached = _get_cached_forecast(db, "country_index", cc, horizon, quarter)
     if cached:
         return cached
 

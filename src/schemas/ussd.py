@@ -156,6 +156,27 @@ class USSDDailyAggregateResponse(BaseModel):
 
 # ── USSD Status Overview ─────────────────────────────────────────────
 
+class RouteReportResponse(BaseModel):
+    id: int
+    country_id: int
+    period_date: date
+    corridor_code: str
+    corridor_name: str
+    report_type: str
+    road_surface: Optional[str]
+    condition_score: Optional[float]
+    wait_hours: Optional[float]
+    fuel_type: Optional[str]
+    fuel_price_local: Optional[float]
+    fuel_price_usd: Optional[float]
+    transit_hours: Optional[float]
+    reporter_count: int
+    reporter_type: Optional[str]
+    confidence: float
+
+    model_config = {"from_attributes": True}
+
+
 class USSDStatusResponse(BaseModel):
     """Overview of USSD data pipeline status."""
     total_providers: int

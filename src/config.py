@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = _DEFAULT_SECRET_KEY
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    BLACKLIST_CLEANUP_INTERVAL_MINUTES: int = 30
     DEFAULT_QUERY_COST: float = 1.0
     FREE_TIER_BALANCE: float = 10.0
     DEBUG: bool = False

@@ -46,6 +46,7 @@ from src.engines.tokenization_engine import (
 )
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.periods import parse_quarter
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,7 @@ async def tokenization_status(
 async def get_tokens(
     country_code: str = Path(..., min_length=2, max_length=2),
     days: int = Query(default=30, ge=1, le=365),
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides days."),
     pillar: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -135,11 +137,14 @@ async def get_tokens(
     deduct_credits(current_user, db, "/api/v3/tokenization/tokens", cost_multiplier=1.0)
     country = _get_country(db, country_code)
 
-    cutoff = date.today() - timedelta(days=days)
-    q = (
-        db.query(DataToken)
-        .filter(DataToken.country_id == country.id, DataToken.period_date >= cutoff)
-    )
+    q = db.query(DataToken).filter(DataToken.country_id == country.id)
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        q = q.filter(DataToken.period_date.between(q_start, q_end))
+    else:
+        cutoff = date.today() - timedelta(days=days)
+        q = q.filter(DataToken.period_date >= cutoff)
+
     if pillar:
         q = q.filter(DataToken.pillar == pillar.upper())
 
@@ -153,6 +158,7 @@ async def get_tokens(
 async def get_activities(
     country_code: str = Path(..., min_length=2, max_length=2),
     days: int = Query(default=7, ge=1, le=90),
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides days."),
     activity_type: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -161,14 +167,14 @@ async def get_activities(
     deduct_credits(current_user, db, "/api/v3/tokenization/activities", cost_multiplier=1.0)
     country = _get_country(db, country_code)
 
-    cutoff = date.today() - timedelta(days=days)
-    q = (
-        db.query(DailyActivityDeclaration)
-        .filter(
-            DailyActivityDeclaration.country_id == country.id,
-            DailyActivityDeclaration.period_date >= cutoff,
-        )
-    )
+    q = db.query(DailyActivityDeclaration).filter(DailyActivityDeclaration.country_id == country.id)
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        q = q.filter(DailyActivityDeclaration.period_date.between(q_start, q_end))
+    else:
+        cutoff = date.today() - timedelta(days=days)
+        q = q.filter(DailyActivityDeclaration.period_date >= cutoff)
+
     if activity_type:
         q = q.filter(DailyActivityDeclaration.activity_type == activity_type.upper())
 
@@ -358,6 +364,7 @@ async def get_workers(
 async def get_payments(
     country_code: str = Path(..., min_length=2, max_length=2),
     days: int = Query(default=30, ge=1, le=365),
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides days."),
     payment_type: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -366,14 +373,14 @@ async def get_payments(
     deduct_credits(current_user, db, "/api/v3/tokenization/payments", cost_multiplier=1.0)
     country = _get_country(db, country_code)
 
-    cutoff = date.today() - timedelta(days=days)
-    q = (
-        db.query(PaymentDisbursement)
-        .filter(
-            PaymentDisbursement.country_id == country.id,
-            PaymentDisbursement.queued_at >= cutoff,
-        )
-    )
+    q = db.query(PaymentDisbursement).filter(PaymentDisbursement.country_id == country.id)
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        q = q.filter(PaymentDisbursement.queued_at >= q_start, PaymentDisbursement.queued_at <= q_end)
+    else:
+        cutoff = date.today() - timedelta(days=days)
+        q = q.filter(PaymentDisbursement.queued_at >= cutoff)
+
     if payment_type:
         q = q.filter(PaymentDisbursement.payment_type == payment_type.upper())
 

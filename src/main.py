@@ -45,6 +45,7 @@ from src.routes.risk import router as risk_router
 from src.routes.legislative import router as legislative_router
 from src.routes.valuation import router as valuation_router
 from src.routes.fx import router as fx_router
+from src.routes.corridor import router as corridor_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -395,6 +396,17 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("FX Analytics bootstrap failed (non-fatal): %s", exc)
 
+        # ── Corridor bootstrap ───────────────────────────────────────
+        try:
+            from src.engines.corridor_engine import seed_corridors
+            seeded = seed_corridors(db)
+            if seeded > 0:
+                logger.info("Corridor bootstrap complete: %d corridors seeded", seeded)
+            else:
+                logger.info("Corridor data present — skipping bootstrap")
+        except Exception as exc:
+            logger.warning("Corridor bootstrap failed (non-fatal): %s", exc)
+
     finally:
         db.close()
 
@@ -479,6 +491,7 @@ app.include_router(risk_router)
 app.include_router(legislative_router)
 app.include_router(valuation_router)
 app.include_router(fx_router)
+app.include_router(corridor_router)
 
 
 @app.get("/", tags=["Root"])

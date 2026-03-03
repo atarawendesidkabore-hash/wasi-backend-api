@@ -14,13 +14,15 @@ Endpoints for monitoring data quality and triggering manual data refreshes.
 """
 import logging
 from datetime import timezone, datetime, date
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from src.database.connection import get_db
 from src.database.models import User, Country, CountryIndex, MacroIndicator, CommodityPrice
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.periods import parse_quarter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v2/data", tags=["Data Admin"])
@@ -252,6 +254,7 @@ async def trigger_commodity_refresh(
 
 @router.get("/commodities/latest")
 async def get_latest_commodities(
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -261,7 +264,12 @@ async def get_latest_commodities(
     """
     deduct_credits(current_user, db, "/api/v2/data/commodities/latest", cost_multiplier=1.0)
 
-    all_cp = db.query(CommodityPrice).order_by(
+    cp_query = db.query(CommodityPrice)
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        cp_query = cp_query.filter(CommodityPrice.period_date.between(q_start, q_end))
+
+    all_cp = cp_query.order_by(
         CommodityPrice.commodity_code,
         CommodityPrice.period_date.desc()
     ).all()
@@ -300,12 +308,14 @@ async def get_latest_commodities(
 @router.get("/macro/{country_code}")
 async def get_macro_indicators(
     country_code: str,
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter year: Q1-2026 returns 2026 data. T3-2024 returns 2024 data."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     IMF WEO macroeconomic indicators for a specific country.
     Returns last 5 years including current-year projections.
+    When quarter is provided, filters to that year's data.
     1 credit.
     """
     deduct_credits(current_user, db, f"/api/v2/data/macro/{country_code}", cost_multiplier=1.0)
@@ -314,9 +324,12 @@ async def get_macro_indicators(
     if not country:
         raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
 
+    macro_query = db.query(MacroIndicator).filter(MacroIndicator.country_id == country.id)
+    if quarter:
+        q_start, _ = parse_quarter(quarter)
+        macro_query = macro_query.filter(MacroIndicator.year == q_start.year)
     records = (
-        db.query(MacroIndicator)
-        .filter(MacroIndicator.country_id == country.id)
+        macro_query
         .order_by(MacroIndicator.year.desc())
         .limit(5)
         .all()

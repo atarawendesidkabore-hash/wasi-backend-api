@@ -48,6 +48,21 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
+class TokenResponseWithRefresh(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -58,3 +73,19 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SessionInfo(BaseModel):
+    id: int
+    created_at: datetime
+    expires_at: datetime
+    is_revoked: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserSessionsResponse(BaseModel):
+    user_id: int
+    active_sessions: int
+    revoked_count: int
+    sessions: list[SessionInfo] = []

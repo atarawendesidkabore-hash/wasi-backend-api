@@ -1,4 +1,8 @@
 import jwt
+import secrets
+import hashlib
+import uuid
+import threading
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -11,6 +15,39 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
+# ── Token Blacklist (in-memory) ──────────────────────────────────────────
+# Process-local set of revoked access token JTIs. On restart, revoked refresh
+# tokens are still checked in the DB; a stolen access token can only survive
+# until its 60-min natural expiry after a restart (acceptable vs Redis).
+
+_blacklisted_jtis: set[str] = set()
+_blacklist_lock = threading.Lock()
+_blacklist_expiry: dict[str, float] = {}  # jti → unix timestamp of token exp
+
+
+def blacklist_jti(jti: str, exp_timestamp: float) -> None:
+    with _blacklist_lock:
+        _blacklisted_jtis.add(jti)
+        _blacklist_expiry[jti] = exp_timestamp
+
+
+def is_jti_blacklisted(jti: str) -> bool:
+    with _blacklist_lock:
+        return jti in _blacklisted_jtis
+
+
+def cleanup_blacklist() -> int:
+    now = datetime.now(timezone.utc).timestamp()
+    with _blacklist_lock:
+        expired = [jti for jti, exp in _blacklist_expiry.items() if exp < now]
+        for jti in expired:
+            _blacklisted_jtis.discard(jti)
+            del _blacklist_expiry[jti]
+    return len(expired)
+
+
+# ── Password Hashing ────────────────────────────────────────────────────
+
 def hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
 
@@ -19,12 +56,15 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
+# ── Access Token (JWT) ──────────────────────────────────────────────────
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     payload = data.copy()
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    payload.update({"exp": expire, "iat": datetime.now(timezone.utc)})
+    jti = str(uuid.uuid4())
+    payload.update({"exp": expire, "iat": datetime.now(timezone.utc), "jti": jti})
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -49,6 +89,21 @@ def decode_access_token(token: str) -> dict:
         )
 
 
+# ── Refresh Token ───────────────────────────────────────────────────────
+
+def create_refresh_token() -> tuple[str, str]:
+    """Generate a random refresh token. Returns (raw_token, sha256_hash)."""
+    raw = secrets.token_urlsafe(48)
+    hashed = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, hashed
+
+
+def hash_refresh_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+# ── Auth Dependencies ───────────────────────────────────────────────────
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -60,6 +115,16 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
+
+    # Blacklist check (backward compat: old tokens without jti skip this)
+    jti = payload.get("jti")
+    if jti and is_jti_blacklisted(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     from src.database.models import User
     user = db.query(User).filter(User.id == int(user_id)).first()
     if not user or not user.is_active:

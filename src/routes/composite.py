@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 import numpy as np
@@ -8,6 +8,7 @@ from src.engines.composite_engine import CompositeEngine
 from src.schemas.composite import CompositeResponse, CompositeReport
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.periods import parse_quarter
 from datetime import timezone, datetime
 from typing import Optional
 
@@ -97,6 +98,7 @@ async def calculate_composite(
 
 @router.get("/report", response_model=CompositeReport)
 async def get_composite_report(
+    quarter: Optional[str] = Query(default=None, description="Filter history by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -117,8 +119,12 @@ async def get_composite_report(
             detail="No composite data available. Call POST /api/composite/calculate first.",
         )
 
+    history_query = db.query(WASIComposite)
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        history_query = history_query.filter(WASIComposite.period_date.between(q_start, q_end))
     history = (
-        db.query(WASIComposite)
+        history_query
         .order_by(WASIComposite.period_date.desc())
         .limit(12)
         .all()

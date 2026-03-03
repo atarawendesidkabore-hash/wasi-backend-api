@@ -37,6 +37,7 @@ from src.database.ussd_models import (
     USSDProvider, USSDSession, USSDMobileMoneyFlow,
     USSDCommodityReport, USSDTradeDeclaration,
     USSDPortClearance, USSDDailyAggregate,
+    USSDRouteReport,
 )
 from src.schemas.ussd import (
     USSDCallbackRequest, USSDCallbackResponse,
@@ -44,8 +45,9 @@ from src.schemas.ussd import (
     MobileMoneyFlowCreate, MobileMoneyFlowResponse,
     CommodityReportResponse, TradeDeclarationResponse,
     PortClearanceResponse, USSDDailyAggregateResponse,
-    USSDStatusResponse,
+    USSDStatusResponse, RouteReportResponse,
 )
+from src.utils.periods import parse_quarter
 from src.engines.ussd_engine import USSDMenuEngine, USSDDataAggregator, _to_usd
 from src.utils.security import get_current_user, require_admin
 from src.utils.credits import deduct_credits
@@ -227,7 +229,7 @@ async def get_ussd_status(
     countries_port = db.query(func.count(func.distinct(USSDPortClearance.country_id))).scalar() or 0
 
     unique_countries = set()
-    for model in [USSDMobileMoneyFlow, USSDCommodityReport, USSDTradeDeclaration, USSDPortClearance]:
+    for model in [USSDMobileMoneyFlow, USSDCommodityReport, USSDTradeDeclaration, USSDPortClearance, USSDRouteReport]:
         ids = db.query(func.distinct(model.country_id)).all()
         unique_countries.update(r[0] for r in ids)
 
@@ -244,6 +246,7 @@ async def get_ussd_status(
             "commodity_reports": db.query(USSDCommodityReport).count(),
             "trade_declarations": db.query(USSDTradeDeclaration).count(),
             "port_clearances": db.query(USSDPortClearance).count(),
+            "route_reports": db.query(USSDRouteReport).count(),
         },
         latest_aggregate_date=latest_agg,
     )
@@ -252,19 +255,25 @@ async def get_ussd_status(
 @router.get("/aggregate/all")
 async def get_all_aggregates(
     period_date: Optional[date] = Query(default=None),
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides period_date."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get USSD daily aggregate for all countries. Costs 2 credits."""
     deduct_credits(current_user, db, "/api/v2/ussd/aggregate/all", cost_multiplier=2.0)
 
-    target = period_date or date.today()
-    rows = (
+    agg_query = (
         db.query(USSDDailyAggregate, Country)
         .join(Country, Country.id == USSDDailyAggregate.country_id)
-        .filter(USSDDailyAggregate.period_date == target)
-        .all()
     )
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        agg_query = agg_query.filter(USSDDailyAggregate.period_date.between(q_start, q_end))
+    else:
+        target = period_date or date.today()
+        agg_query = agg_query.filter(USSDDailyAggregate.period_date == target)
+
+    rows = agg_query.all()
 
     results = []
     for agg, country in rows:
@@ -282,7 +291,8 @@ async def get_all_aggregates(
             "confidence": agg.confidence,
         })
 
-    return {"period_date": str(target), "aggregates": results}
+    label = quarter if quarter else str(period_date or date.today())
+    return {"period_date": label, "aggregates": results}
 
 
 @router.get("/aggregate/summary")
@@ -347,6 +357,7 @@ async def get_aggregate_summary(
 async def get_country_aggregate(
     country_code: str = Path(pattern="^[A-Za-z]{2}$"),
     days: int = Query(default=400, ge=1, le=730),
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides days."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -357,16 +368,15 @@ async def get_country_aggregate(
     if not country:
         raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
 
-    cutoff = date.today() - timedelta(days=days)
-    rows = (
-        db.query(USSDDailyAggregate)
-        .filter(
-            USSDDailyAggregate.country_id == country.id,
-            USSDDailyAggregate.period_date >= cutoff,
-        )
-        .order_by(USSDDailyAggregate.period_date.desc())
-        .all()
-    )
+    q = db.query(USSDDailyAggregate).filter(USSDDailyAggregate.country_id == country.id)
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        q = q.filter(USSDDailyAggregate.period_date.between(q_start, q_end))
+    else:
+        cutoff = date.today() - timedelta(days=days)
+        q = q.filter(USSDDailyAggregate.period_date >= cutoff)
+
+    rows = q.order_by(USSDDailyAggregate.period_date.desc()).all()
 
     return {
         "country_code": country.code,
@@ -574,3 +584,115 @@ async def list_providers(
     """List registered USSD providers. Costs 1 credit."""
     deduct_credits(current_user, db, "/api/v2/ussd/providers")
     return db.query(USSDProvider).all()
+
+
+# ── Route report endpoints ───────────────────────────────────────────
+
+@router.get("/routes/{country_code}")
+async def get_route_reports(
+    country_code: str = Path(pattern="^[A-Za-z]{2}$"),
+    days: int = Query(default=7, ge=1, le=90),
+    corridor: Optional[str] = Query(default=None, description="Filter by corridor code"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get crowdsourced route condition reports for a country. Costs 1 credit."""
+    deduct_credits(current_user, db, f"/api/v2/ussd/routes/{country_code}")
+
+    country = db.query(Country).filter(Country.code == country_code.upper()).first()
+    if not country:
+        raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
+
+    cutoff = date.today() - timedelta(days=days)
+    query = (
+        db.query(USSDRouteReport)
+        .filter(
+            USSDRouteReport.country_id == country.id,
+            USSDRouteReport.period_date >= cutoff,
+        )
+    )
+    if corridor:
+        query = query.filter(USSDRouteReport.corridor_code == corridor.upper())
+    rows = query.order_by(USSDRouteReport.period_date.desc()).all()
+
+    return {
+        "country_code": country.code,
+        "country_name": country.name,
+        "reports": [
+            {
+                "period_date": str(r.period_date),
+                "corridor_code": r.corridor_code,
+                "corridor_name": r.corridor_name,
+                "report_type": r.report_type,
+                "road_surface": r.road_surface,
+                "condition_score": r.condition_score,
+                "wait_hours": r.wait_hours,
+                "fuel_type": r.fuel_type,
+                "fuel_price_local": r.fuel_price_local,
+                "fuel_price_usd": r.fuel_price_usd,
+                "transit_hours": r.transit_hours,
+                "reporter_count": r.reporter_count,
+                "reporter_type": r.reporter_type,
+                "confidence": r.confidence,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/routes/corridor/{corridor_code}")
+async def get_corridor_reports(
+    corridor_code: str,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all route reports for a specific corridor across countries. Costs 2 credits."""
+    deduct_credits(current_user, db, f"/api/v2/ussd/routes/corridor/{corridor_code}", cost_multiplier=2.0)
+
+    cutoff = date.today() - timedelta(days=days)
+    rows = (
+        db.query(USSDRouteReport, Country)
+        .join(Country, Country.id == USSDRouteReport.country_id)
+        .filter(
+            USSDRouteReport.corridor_code == corridor_code.upper(),
+            USSDRouteReport.period_date >= cutoff,
+        )
+        .order_by(USSDRouteReport.period_date.desc())
+        .all()
+    )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No reports for corridor '{corridor_code}'")
+
+    return {
+        "corridor_code": corridor_code.upper(),
+        "corridor_name": rows[0][0].corridor_name if rows else corridor_code,
+        "reports": [
+            {
+                "period_date": str(r.period_date),
+                "country_code": c.code,
+                "report_type": r.report_type,
+                "road_surface": r.road_surface,
+                "condition_score": r.condition_score,
+                "wait_hours": r.wait_hours,
+                "fuel_type": r.fuel_type,
+                "fuel_price_local": r.fuel_price_local,
+                "transit_hours": r.transit_hours,
+                "reporter_count": r.reporter_count,
+                "confidence": r.confidence,
+            }
+            for r, c in rows
+        ],
+    }
+
+
+@router.post("/routes/bridge")
+async def trigger_route_bridge(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Manually trigger route-to-RoadCorridor bridge. Admin only, 5 credits."""
+    deduct_credits(current_user, db, "/api/v2/ussd/routes/bridge", cost_multiplier=5.0)
+    from src.tasks.ussd_aggregation import bridge_route_to_road_corridors
+    return bridge_route_to_road_corridors(db)

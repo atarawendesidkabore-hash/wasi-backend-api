@@ -1,6 +1,8 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 from datetime import date, datetime
 from typing import Optional
+
+from src.utils.periods import quarter_label
 
 
 class CompositeResponse(BaseModel):
@@ -19,6 +21,12 @@ class CompositeResponse(BaseModel):
     calculated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field
+    @property
+    def quarter(self) -> str:
+        """Quarter label derived from period_date, e.g. 'Q2-2026'."""
+        return quarter_label(self.period_date)
 
 
 class CompositeReport(BaseModel):

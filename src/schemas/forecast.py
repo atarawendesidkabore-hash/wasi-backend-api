@@ -1,7 +1,9 @@
 """Pydantic schemas for forecast API responses."""
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
+
+from src.utils.periods import quarter_label
 
 
 class ForecastPeriod(BaseModel):
@@ -12,6 +14,12 @@ class ForecastPeriod(BaseModel):
     upper_1sigma: float
     lower_2sigma: float
     upper_2sigma: float
+
+    @computed_field
+    @property
+    def quarter(self) -> Optional[str]:
+        """Quarter label derived from period_date, e.g. 'Q3-2026'."""
+        return quarter_label(self.period_date) if self.period_date else None
 
 
 class ForecastResponse(BaseModel):

@@ -12,7 +12,7 @@ Endpoint credit costs:
   GET  /corridor/{corridor_name}     — 1 credit
   GET  /mode-comparison/{country_code} — 2 credits
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from datetime import date
@@ -27,6 +27,7 @@ from src.database.models import (
 from src.engines.transport_engine import TransportEngine, PROFILE_WEIGHTS, AIR_BENCHMARKS, SITARAIL_BASELINE_MONTHLY, SITARAIL_2024_MONTHLY
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.periods import parse_quarter
 
 router = APIRouter(prefix="/api/v2/transport", tags=["Transport"])
 
@@ -118,11 +119,12 @@ async def get_transport_latest(
 async def get_transport_history(
     country_code: str,
     months: int = 6,
+    quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides months."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Stored transport composite history for a country (last N months). 3 credits.
+    Stored transport composite history for a country (last N months or by quarter). 3 credits.
     """
     deduct_credits(current_user, db, f"/api/v2/transport/history/{country_code}", cost_multiplier=3.0)
 
@@ -130,11 +132,14 @@ async def get_transport_history(
     if not country:
         raise HTTPException(status_code=404, detail=f"Country '{country_code}' not found")
 
+    history_query = db.query(TransportComposite).filter(TransportComposite.country_id == country.id)
+    if quarter:
+        q_start, q_end = parse_quarter(quarter)
+        history_query = history_query.filter(TransportComposite.period_date.between(q_start, q_end))
     history = (
-        db.query(TransportComposite)
-        .filter(TransportComposite.country_id == country.id)
+        history_query
         .order_by(TransportComposite.period_date.desc())
-        .limit(months)
+        .limit(months if not quarter else 12)
         .all()
     )
 

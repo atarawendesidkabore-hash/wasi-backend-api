@@ -291,11 +291,42 @@ def start_scheduler():
         misfire_grace_time=300,
     )
 
+    # Corridor Intelligence: reassess all trade corridors every 6 hours
+    from src.tasks.corridor_assessment import run_corridor_assessment
+    _scheduler.add_job(
+        run_corridor_assessment,
+        trigger=IntervalTrigger(hours=6),
+        id="corridor_assessment",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # Token blacklist cleanup every 30 minutes
+    from src.utils.security import cleanup_blacklist
+    _scheduler.add_job(
+        cleanup_blacklist,
+        trigger=IntervalTrigger(minutes=settings.BLACKLIST_CLEANUP_INTERVAL_MINUTES),
+        id="token_blacklist_cleanup",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+
+    # Expired refresh token cleanup daily at 03:00 UTC
+    from src.tasks.auth_cleanup import cleanup_expired_refresh_tokens
+    _scheduler.add_job(
+        cleanup_expired_refresh_tokens,
+        trigger=CronTrigger(hour=3, minute=0),
+        id="refresh_token_cleanup",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
         "AML 1h, interest daily, reserves daily, facilities 1h, forecast daily 04:00, "
-        "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h, FX analytics 6h",
+        "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h, "
+        "FX analytics 6h, corridor assessment 6h, blacklist cleanup 30m, refresh cleanup daily",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )
 

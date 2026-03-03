@@ -43,11 +43,13 @@ from src.routes.bank import limiter as bank_limiter
 from src.routes.cbdc_payments import limiter as cbdc_payments_limiter
 from src.routes.valuation import limiter as valuation_limiter
 from src.routes.fx import limiter as fx_limiter
+from src.routes.corridor import limiter as corridor_limiter
 auth_limiter.enabled = False
 bank_limiter.enabled = False
 cbdc_payments_limiter.enabled = False
 valuation_limiter.enabled = False
 fx_limiter.enabled = False
+corridor_limiter.enabled = False
 
 
 @pytest.fixture(autouse=True)
@@ -59,5 +61,12 @@ def setup_db():
         seed_countries(db)
     finally:
         db.close()
+
+    # Clear in-memory token blacklist between tests
+    from src.utils.security import _blacklisted_jtis, _blacklist_expiry, _blacklist_lock
+    with _blacklist_lock:
+        _blacklisted_jtis.clear()
+        _blacklist_expiry.clear()
+
     yield
     Base.metadata.drop_all(bind=test_engine)
