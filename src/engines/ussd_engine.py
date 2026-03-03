@@ -175,7 +175,10 @@ class USSDMenuEngine:
                 "3. Port / Douanes\n"
                 "4. Indice WASI pays\n"
                 "5. Mon compte\n"
-                "6. eCFA Portefeuille"
+                "6. eCFA Portefeuille\n"
+                "7. Activité quotidienne\n"
+                "8. Données entreprise\n"
+                "9. Faso Meabo check-in"
             )
             session_type = "MENU"
         elif parts[0] == "1":
@@ -204,6 +207,18 @@ class USSDMenuEngine:
             ecfa_engine = CbdcUSSDEngine(self.db)
             response, session_type = ecfa_engine.handle_ecfa_menu(
                 parts[1:], phone_number, country_code
+            )
+        elif parts[0] == "7":
+            response, session_type = self._handle_activity_declaration(
+                parts[1:], country_code, phone_hash
+            )
+        elif parts[0] == "8":
+            response, session_type = self._handle_business_submission(
+                parts[1:], country_code, phone_hash
+            )
+        elif parts[0] == "9":
+            response, session_type = self._handle_worker_checkin(
+                parts[1:], country_code, phone_hash
             )
         else:
             response = "END Option invalide. Composez à nouveau *384*WASI#"
@@ -550,6 +565,344 @@ class USSDMenuEngine:
             "- Consulter l'indice WASI\n"
             "Contact: support@wasi.africa"
         ), "ACCOUNT"
+
+    # ── Tokenization menu handlers ─────────────────────────────────────
+
+    # Activity types for option 7
+    _ACTIVITY_TYPES = {
+        "1": ("FARM_WORK", "Travaux agricoles"),
+        "2": ("MARKET_PRICE", "Prix du marché"),
+        "3": ("CROP_YIELD", "Rendement récolte"),
+        "4": ("ROAD_CONDITION", "État des routes"),
+        "5": ("WEATHER", "Météo"),
+        "6": ("WATER_ACCESS", "Accès eau"),
+        "7": ("HEALTH_FACILITY", "Centre de santé"),
+        "8": ("SCHOOL_STATUS", "École"),
+    }
+
+    _ACTIVITY_PAYMENTS = {
+        "FARM_WORK": 100, "MARKET_PRICE": 75, "CROP_YIELD": 150,
+        "ROAD_CONDITION": 50, "WEATHER": 50, "WATER_ACCESS": 75,
+        "HEALTH_FACILITY": 200, "SCHOOL_STATUS": 100,
+    }
+
+    # Business types for option 8
+    _BUSINESS_TYPES = {
+        "1": ("AGRICULTURE", "Agriculture"),
+        "2": ("TRADING", "Commerce"),
+        "3": ("TRANSPORT", "Transport"),
+        "4": ("MANUFACTURING", "Industrie"),
+        "5": ("SERVICES", "Services"),
+        "6": ("MINING", "Mines"),
+        "7": ("RETAIL", "Distribution"),
+    }
+
+    _METRIC_TYPES = {
+        "1": ("SALES_VOLUME", "Chiffre d'affaires", "B"),
+        "2": ("INVENTORY_LEVEL", "Niveau stock", "B"),
+        "3": ("EMPLOYEE_COUNT", "Employés", "C"),
+        "4": ("TRADE_VOLUME", "Volume échanges", "B"),
+        "5": ("CUSTOMS_DECLARATION", "Déclaration douane", "A"),
+    }
+
+    def _handle_activity_declaration(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Option 7: Daily activity declaration flow (4 steps)."""
+        if len(parts) == 0:
+            lines = ["CON Activité quotidienne:"]
+            for k, (_, name) in self._ACTIVITY_TYPES.items():
+                lines.append(f"{k}. {name}")
+            return "\n".join(lines), "ACTIVITY_DECLARATION"
+
+        # Step 1: Activity type selected → ask location
+        if len(parts) == 1:
+            if parts[0] not in self._ACTIVITY_TYPES:
+                return "END Choix invalide.", "ERROR"
+            _, name = self._ACTIVITY_TYPES[parts[0]]
+            return (
+                f"CON {name}\n"
+                "Entrez le nom du lieu\n"
+                "(village, marché, route):"
+            ), "ACTIVITY_DECLARATION"
+
+        # Step 2: Location entered → ask value
+        if len(parts) == 2:
+            code, name = self._ACTIVITY_TYPES.get(parts[0], ("FARM_WORK", "Activité"))
+            if code in ("MARKET_PRICE", "CROP_YIELD"):
+                return (
+                    f"CON {name} à {parts[1]}\n"
+                    "Entrez la valeur\n"
+                    "(prix en CFA ou kg):"
+                ), "ACTIVITY_DECLARATION"
+            return (
+                f"CON {name} à {parts[1]}\n"
+                f"Paiement: {self._ACTIVITY_PAYMENTS.get(code, 50)} FCFA\n"
+                "1. Confirmer\n"
+                "2. Annuler"
+            ), "ACTIVITY_DECLARATION"
+
+        # Step 3: Value entered (for price/yield types) → confirm
+        if len(parts) == 3:
+            code, name = self._ACTIVITY_TYPES.get(parts[0], ("FARM_WORK", "Activité"))
+            if code in ("MARKET_PRICE", "CROP_YIELD"):
+                payment = self._ACTIVITY_PAYMENTS.get(code, 50)
+                return (
+                    f"CON {name}\n"
+                    f"Lieu: {parts[1]}\n"
+                    f"Valeur: {parts[2]}\n"
+                    f"Paiement: {payment} FCFA\n"
+                    "1. Confirmer\n"
+                    "2. Annuler"
+                ), "ACTIVITY_DECLARATION"
+            # Non-value types: parts[2] is the confirm choice
+            if parts[2] == "2":
+                return "END Déclaration annulée.", "ACTIVITY_DECLARATION"
+            if parts[2] == "1":
+                return self._save_activity(parts, country_code, phone_hash)
+            return "END Choix invalide.", "ERROR"
+
+        # Step 4: Confirmation for value types
+        if len(parts) == 4:
+            if parts[3] == "2":
+                return "END Déclaration annulée.", "ACTIVITY_DECLARATION"
+            if parts[3] == "1":
+                return self._save_activity(parts, country_code, phone_hash)
+            return "END Choix invalide.", "ERROR"
+
+        return "END Erreur de session.", "ERROR"
+
+    def _save_activity(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Persist activity declaration via TokenizationEngine."""
+        try:
+            from src.engines.tokenization_engine import TokenizationEngine
+            engine = TokenizationEngine(self.db)
+            code, name = self._ACTIVITY_TYPES.get(parts[0], ("FARM_WORK", "Activité"))
+            location = parts[1]
+            value = None
+            if len(parts) >= 4 and code in ("MARKET_PRICE", "CROP_YIELD"):
+                try:
+                    value = float(parts[2])
+                except (ValueError, IndexError):
+                    pass
+
+            result = engine.create_citizen_token(
+                country_code=country_code,
+                phone_hash=phone_hash,
+                activity_type=code,
+                location_name=location,
+                quantity_value=value,
+                quantity_unit="CFA/kg" if code == "MARKET_PRICE" else ("kg" if code == "CROP_YIELD" else None),
+            )
+
+            payment = result.get("payment_cfa", 0)
+            if result.get("status") == "updated":
+                return (
+                    f"END Merci! Rapport mis à jour.\n"
+                    f"{name} — {location}\n"
+                    f"Confiance: {result.get('confidence', 0):.0%}"
+                ), "ACTIVITY_DECLARATION"
+
+            return (
+                f"END Merci! Déclaration enregistrée.\n"
+                f"{name} — {location}\n"
+                f"Paiement: {payment} FCFA\n"
+                f"Token: {result.get('token_id', '')[:8]}..."
+            ), "ACTIVITY_DECLARATION"
+        except Exception as exc:
+            logger.error("Activity save failed: %s", exc)
+            return "END Erreur technique. Réessayez.", "ERROR"
+
+    def _handle_business_submission(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Option 8: Business data submission flow (5 steps)."""
+        if len(parts) == 0:
+            lines = ["CON Type d'entreprise:"]
+            for k, (_, name) in self._BUSINESS_TYPES.items():
+                lines.append(f"{k}. {name}")
+            return "\n".join(lines), "BUSINESS_SUBMISSION"
+
+        # Step 1: Business type → ask metric
+        if len(parts) == 1:
+            if parts[0] not in self._BUSINESS_TYPES:
+                return "END Choix invalide.", "ERROR"
+            lines = ["CON Type de donnée:"]
+            for k, (_, name, tier) in self._METRIC_TYPES.items():
+                credit = {"A": "15%", "B": "10%", "C": "5%"}[tier]
+                lines.append(f"{k}. {name} ({credit})")
+            return "\n".join(lines), "BUSINESS_SUBMISSION"
+
+        # Step 2: Metric type → ask value
+        if len(parts) == 2:
+            if parts[1] not in self._METRIC_TYPES:
+                return "END Choix invalide.", "ERROR"
+            _, name, tier = self._METRIC_TYPES[parts[1]]
+            return (
+                f"CON {name} (Tier {tier})\n"
+                "Entrez le montant en FCFA:"
+            ), "BUSINESS_SUBMISSION"
+
+        # Step 3: Value → ask period
+        if len(parts) == 3:
+            return (
+                "CON Période (AAAAMM):\n"
+                "Ex: 202603 pour mars 2026"
+            ), "BUSINESS_SUBMISSION"
+
+        # Step 4: Period → confirm
+        if len(parts) == 4:
+            _, biz_name = self._BUSINESS_TYPES.get(parts[0], ("", ""))
+            _, metric_name, tier = self._METRIC_TYPES.get(parts[1], ("", "", "C"))
+            credit_pct = {"A": "15%", "B": "10%", "C": "5%"}[tier]
+            return (
+                f"CON Résumé:\n"
+                f"Entreprise: {biz_name}\n"
+                f"Donnée: {metric_name}\n"
+                f"Montant: {parts[2]} FCFA\n"
+                f"Crédit: {credit_pct}\n"
+                "1. Confirmer\n"
+                "2. Annuler"
+            ), "BUSINESS_SUBMISSION"
+
+        # Step 5: Confirmation
+        if len(parts) == 5:
+            if parts[4] == "2":
+                return "END Soumission annulée.", "BUSINESS_SUBMISSION"
+            if parts[4] == "1":
+                return self._save_business(parts, country_code, phone_hash)
+            return "END Choix invalide.", "ERROR"
+
+        return "END Erreur de session.", "ERROR"
+
+    def _save_business(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Persist business submission via TokenizationEngine."""
+        try:
+            from src.engines.tokenization_engine import TokenizationEngine
+            import json
+            from datetime import date as date_type
+
+            engine = TokenizationEngine(self.db)
+            biz_code, biz_name = self._BUSINESS_TYPES.get(parts[0], ("SERVICES", "Services"))
+            metric_code, _, tier = self._METRIC_TYPES.get(parts[1], ("ACTIVITY_REPORT", "", "C"))
+
+            try:
+                value = float(parts[2])
+            except (ValueError, IndexError):
+                value = 0
+
+            # Parse period
+            try:
+                period_str = parts[3]
+                p_date = date_type(int(period_str[:4]), int(period_str[4:6]), 1)
+            except (ValueError, IndexError):
+                p_date = date_type.today().replace(day=1)
+
+            metrics_json = json.dumps({"declared_value_cfa": value})
+
+            result = engine.create_business_token(
+                country_code=country_code,
+                business_phone_hash=phone_hash,
+                business_type=biz_code,
+                metric_type=metric_code,
+                metrics_json=metrics_json,
+                period_date=p_date,
+            )
+
+            credit = result.get("credit_earned_cfa", 0)
+            remaining = result.get("cap_remaining_cfa", 0)
+            return (
+                f"END Données enregistrées!\n"
+                f"Tier {tier} — {biz_name}\n"
+                f"Crédit d'impôt: {credit:,.0f} FCFA\n"
+                f"Restant cap annuel: {remaining:,.0f}"
+            ), "BUSINESS_SUBMISSION"
+        except Exception as exc:
+            logger.error("Business save failed: %s", exc)
+            return "END Erreur technique. Réessayez.", "ERROR"
+
+    def _handle_worker_checkin(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Option 9: Faso Meabo worker check-in flow (3 steps)."""
+        if len(parts) == 0:
+            return (
+                "CON Faso Meabo — Pointage\n"
+                "Entrez le code du contrat\n"
+                "(demandez à votre chef):"
+            ), "WORKER_CHECKIN"
+
+        # Step 1: Contract ID → ask location
+        if len(parts) == 1:
+            return (
+                f"CON Contrat: {parts[0][:8]}...\n"
+                "Entrez le nom du chantier:"
+            ), "WORKER_CHECKIN"
+
+        # Step 2: Location → confirm
+        if len(parts) == 2:
+            return (
+                f"CON Pointage journalier\n"
+                f"Contrat: {parts[0][:8]}...\n"
+                f"Chantier: {parts[1]}\n"
+                "1. Confirmer\n"
+                "2. Annuler"
+            ), "WORKER_CHECKIN"
+
+        # Step 3: Confirmation
+        if len(parts) == 3:
+            if parts[2] == "2":
+                return "END Pointage annulé.", "WORKER_CHECKIN"
+            if parts[2] == "1":
+                return self._save_checkin(parts, country_code, phone_hash)
+            return "END Choix invalide.", "ERROR"
+
+        return "END Erreur de session.", "ERROR"
+
+    def _save_checkin(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Persist worker check-in via TokenizationEngine."""
+        try:
+            from src.engines.tokenization_engine import TokenizationEngine
+            engine = TokenizationEngine(self.db)
+
+            result = engine.create_worker_checkin(
+                worker_phone_hash=phone_hash,
+                contract_id=parts[0],
+                country_code=country_code,
+                location_name=parts[1] if len(parts) > 1 else None,
+            )
+
+            if "error" in result:
+                if "not registered" in result["error"]:
+                    return (
+                        "END Travailleur non inscrit.\n"
+                        "Contactez votre chef de chantier\n"
+                        "pour vous enregistrer."
+                    ), "WORKER_CHECKIN"
+                if "Already checked in" in result["error"]:
+                    return (
+                        "END Vous avez déjà pointé\n"
+                        "aujourd'hui sur ce contrat."
+                    ), "WORKER_CHECKIN"
+                return f"END Erreur: {result['error']}", "ERROR"
+
+            rate = result.get("daily_rate_cfa", 0)
+            days = result.get("total_days", 0)
+            return (
+                f"END Pointage enregistré!\n"
+                f"Salaire jour: {rate:,.0f} FCFA\n"
+                f"Jours travaillés: {days}\n"
+                f"Token: {result.get('token_id', '')[:8]}..."
+            ), "WORKER_CHECKIN"
+        except Exception as exc:
+            logger.error("Worker check-in save failed: %s", exc)
+            return "END Erreur technique. Réessayez.", "ERROR"
 
     # ── Data persistence ──────────────────────────────────────────────
 

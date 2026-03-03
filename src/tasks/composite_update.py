@@ -222,6 +222,16 @@ def start_scheduler():
         misfire_grace_time=120,
     )
 
+    # Forecast engine: daily at 04:00 UTC
+    from src.tasks.forecast_task import run_forecast_update
+    _scheduler.add_job(
+        run_forecast_update,
+        trigger=CronTrigger(hour=4, minute=0),
+        id="forecast_update",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     # WASI-Pay: FX rate refresh every 6 hours
     from src.tasks.fx_rate_update import run_fx_rate_update
     _scheduler.add_job(
@@ -232,10 +242,31 @@ def start_scheduler():
         misfire_grace_time=300,
     )
 
+    # Tokenization: aggregation every 4 hours
+    from src.tasks.tokenization_aggregation import run_tokenization_aggregation
+    _scheduler.add_job(
+        run_tokenization_aggregation,
+        trigger=IntervalTrigger(hours=4),
+        id="tokenization_aggregation",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # Tokenization: payment disbursement daily at 20:00 UTC
+    from src.tasks.tokenization_aggregation import run_payment_disbursement
+    _scheduler.add_job(
+        run_payment_disbursement,
+        trigger=CronTrigger(hour=20, minute=0),
+        id="tokenization_disbursement",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
-        "AML 1h, interest daily, reserves daily, facilities 1h, FX rates 6h",
+        "AML 1h, interest daily, reserves daily, facilities 1h, forecast daily 04:00, "
+        "FX rates 6h, tokenization 4h, disbursement daily 20:00",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )
 

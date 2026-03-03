@@ -37,4 +37,6 @@ def init_db():
     import src.database.ussd_models  # noqa: register USSD tables with Base metadata
     import src.database.cbdc_models  # noqa: register eCFA CBDC tables with Base metadata
     import src.database.cbdc_payment_models  # noqa: register cross-border payment tables
+    import src.database.forecast_models  # noqa: register forecast tables
+    import src.database.tokenization_models  # noqa: register tokenization tables
     Base.metadata.create_all(bind=engine)

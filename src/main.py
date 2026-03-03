@@ -39,6 +39,8 @@ from src.routes.cbdc_transaction import router as cbdc_transaction_router
 from src.routes.cbdc_admin import router as cbdc_admin_router
 from src.routes.cbdc_monetary_policy import router as cbdc_monetary_policy_router
 from src.routes.cbdc_payments import router as cbdc_payments_router
+from src.routes.forecast import router as forecast_router
+from src.routes.tokenization import router as tokenization_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -320,6 +322,26 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("eCFA bootstrap failed (non-fatal): %s", exc)
 
+        # Tokenization bootstrap — seed demo data if tables are empty
+        try:
+            from src.database.tokenization_models import DailyActivityDeclaration
+            token_count = db.query(DailyActivityDeclaration).count()
+            if token_count == 0:
+                logger.info("No tokenization data found — seeding demo data...")
+                from src.tasks.tokenization_aggregation import (
+                    seed_tokenization_demo_data,
+                    run_tokenization_aggregation,
+                )
+                n_tokens = seed_tokenization_demo_data(db)
+                if n_tokens:
+                    logger.info("Seeded %d tokenization demo records", n_tokens)
+                    agg = run_tokenization_aggregation(db)
+                    logger.info("Tokenization aggregation: %s", agg.get("status"))
+            else:
+                logger.info("Tokenization data present (%d records) — skipping", token_count)
+        except Exception as exc:
+            logger.warning("Tokenization bootstrap failed (non-fatal): %s", exc)
+
     finally:
         db.close()
 
@@ -393,6 +415,8 @@ app.include_router(cbdc_transaction_router)
 app.include_router(cbdc_admin_router)
 app.include_router(cbdc_monetary_policy_router)
 app.include_router(cbdc_payments_router)
+app.include_router(forecast_router)
+app.include_router(tokenization_router)
 
 
 @app.get("/", tags=["Root"])
