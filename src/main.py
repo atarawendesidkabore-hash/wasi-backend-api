@@ -44,6 +44,7 @@ from src.routes.tokenization import router as tokenization_router
 from src.routes.risk import router as risk_router
 from src.routes.legislative import router as legislative_router
 from src.routes.valuation import router as valuation_router
+from src.routes.fx import router as fx_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -380,6 +381,20 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("Legislative bootstrap failed (non-fatal): %s", exc)
 
+        # FX Analytics bootstrap — seed initial rates if no data exists
+        try:
+            from src.database.fx_models import FxDailyRate
+            fx_count = db.query(FxDailyRate).count()
+            if fx_count == 0:
+                logger.info("No FX rate data found — seeding fallback rates...")
+                from src.pipelines.scrapers.fx_scraper import _seed_fallback_rates
+                _seed_fallback_rates(db)
+                logger.info("FX bootstrap complete: fallback rates seeded")
+            else:
+                logger.info("FX daily rate data present (%d records) — skipping bootstrap", fx_count)
+        except Exception as exc:
+            logger.warning("FX Analytics bootstrap failed (non-fatal): %s", exc)
+
     finally:
         db.close()
 
@@ -463,6 +478,7 @@ app.include_router(tokenization_router)
 app.include_router(risk_router)
 app.include_router(legislative_router)
 app.include_router(valuation_router)
+app.include_router(fx_router)
 
 
 @app.get("/", tags=["Root"])

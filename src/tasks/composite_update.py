@@ -139,11 +139,20 @@ def start_scheduler():
     )
 
     # USSD data aggregation runs every 4 hours
-    from src.tasks.ussd_aggregation import run_ussd_aggregation
+    from src.tasks.ussd_aggregation import run_ussd_aggregation, bridge_route_to_road_corridors
     _scheduler.add_job(
         run_ussd_aggregation,
         trigger=IntervalTrigger(hours=4),
         id="ussd_aggregation",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # Route-to-corridor bridge runs every 4 hours (after USSD aggregation)
+    _scheduler.add_job(
+        bridge_route_to_road_corridors,
+        trigger=IntervalTrigger(hours=4),
+        id="route_corridor_bridge",
         replace_existing=True,
         misfire_grace_time=300,
     )
@@ -272,11 +281,21 @@ def start_scheduler():
         misfire_grace_time=600,
     )
 
+    # FX Analytics: rate scrape + volatility recomputation every 6 hours
+    from src.tasks.fx_analytics_task import run_fx_analytics_update
+    _scheduler.add_job(
+        run_fx_analytics_update,
+        trigger=IntervalTrigger(hours=6),
+        id="fx_analytics_update",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
         "AML 1h, interest daily, reserves daily, facilities 1h, forecast daily 04:00, "
-        "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h",
+        "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h, FX analytics 6h",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )
 

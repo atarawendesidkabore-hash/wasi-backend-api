@@ -34,6 +34,7 @@ from src.database.ussd_models import (
     USSDProvider, USSDSession, USSDMobileMoneyFlow,
     USSDCommodityReport, USSDTradeDeclaration,
     USSDPortClearance, USSDDailyAggregate,
+    USSDRouteReport,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,52 @@ GOODS_CATEGORIES = {
     "8": ("OTHER", "Autres marchandises"),
 }
 
+# ── Road corridors for route reports ────────────────────────────────
+CORRIDORS = {
+    "1": ("ABIDJAN-OUAGADOUGOU", "CI", "BF", "Abidjan - Ouagadougou"),
+    "2": ("LOME-OUAGADOUGOU", "TG", "BF", "Lomé - Ouagadougou"),
+    "3": ("TEMA-OUAGADOUGOU", "GH", "BF", "Tema - Ouagadougou"),
+    "4": ("DAKAR-BAMAKO", "SN", "ML", "Dakar - Bamako"),
+    "5": ("ABIDJAN-BAMAKO", "CI", "ML", "Abidjan - Bamako"),
+    "6": ("LAGOS-COTONOU", "NG", "BJ", "Lagos - Cotonou"),
+    "7": ("COTONOU-NIAMEY", "BJ", "NE", "Cotonou - Niamey"),
+    "8": ("ABIDJAN-ACCRA", "CI", "GH", "Abidjan - Accra"),
+    "9": ("DAKAR-CONAKRY", "SN", "GN", "Dakar - Conakry"),
+    "10": ("CONAKRY-FREETOWN", "GN", "SL", "Conakry - Freetown"),
+    "11": ("LOME-NIAMEY", "TG", "NE", "Lomé - Niamey"),
+    "12": ("LAGOS-ABIDJAN", "NG", "CI", "Lagos - Abidjan"),
+}
+
+REPORT_TYPES = {
+    "1": ("ROAD_CONDITION", "État route"),
+    "2": ("BORDER_WAIT", "Attente frontière"),
+    "3": ("FUEL_PRICE", "Prix carburant"),
+    "4": ("TRANSIT_TIME", "Temps trajet"),
+}
+
+ROAD_SURFACES = {
+    "1": ("PAVED", "Goudronné / Bon état"),
+    "2": ("GRAVEL", "Latérite / Piste"),
+    "3": ("DIRT", "Terre / Mauvais état"),
+    "4": ("FLOODED", "Inondé / Impraticable"),
+    "5": ("BLOCKED", "Route coupée / Barrage"),
+}
+
+FUEL_TYPES = {
+    "1": ("DIESEL", "Diesel / Gasoil"),
+    "2": ("PETROL", "Essence Super"),
+}
+
+REPORTER_TYPES = {
+    "1": ("TRUCKER", "Chauffeur routier"),
+    "2": ("TRADER", "Commerçant"),
+    "3": ("TRAVELER", "Voyageur"),
+    "4": ("CUSTOMS_AGENT", "Agent douane"),
+}
+
+# Condition score mapping from road surface type
+SURFACE_SCORES = {"PAVED": 85, "GRAVEL": 55, "DIRT": 30, "FLOODED": 10, "BLOCKED": 0}
+
 
 def _hash_phone(phone: str) -> str:
     """HMAC-SHA256 hash of phone number for privacy compliance.
@@ -188,6 +235,7 @@ class USSDMenuEngine:
                 "CON Bienvenue sur WASI\n"
                 "West African Shipping Intelligence\n"
                 "━━━━━━━━━━━━━━━━━━\n"
+                "0. Rapport Route\n"
                 "1. Prix du marché\n"
                 "2. Déclaration commerce\n"
                 "3. Port / Douanes\n"

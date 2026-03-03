@@ -41,4 +41,5 @@ def init_db():
     import src.database.tokenization_models  # noqa: register tokenization tables
     import src.database.valuation_models  # noqa: register DCF valuation tables
     import src.database.legislative_models  # noqa: register legislative monitoring tables
+    import src.database.fx_models  # noqa: register FX analytics tables
     Base.metadata.create_all(bind=engine)

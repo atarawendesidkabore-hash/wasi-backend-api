@@ -307,4 +307,68 @@ class USSDDailyAggregate(Base):
 
     country = relationship("Country")
 
+    # Route condition signal from crowdsourced reports
+    route_condition_score = Column(Float)
+
     __table_args__ = (UniqueConstraint("country_id", "period_date"),)
+
+
+class USSDRouteReport(Base):
+    """
+    Crowdsourced road corridor reports from truckers, traders, and travelers.
+
+    Users dial *384*WASI# option 0 to report real-time:
+      - Road surface conditions (potholes, gravel, paved, flooded)
+      - Border crossing wait times
+      - Fuel prices along corridors
+      - Transit times between cities
+
+    Multiple reports for the same corridor/date are aggregated via running
+    averages. These feed into the RoadCorridor model to enrich transport scores.
+    """
+    __tablename__ = "ussd_route_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_id = Column(Integer, ForeignKey("countries.id"), nullable=False, index=True)
+    period_date = Column(Date, nullable=False, index=True)
+
+    # Corridor identification
+    corridor_code = Column(String(50), nullable=False, index=True)
+    corridor_name = Column(String(100), nullable=False)
+
+    # Report type: ROAD_CONDITION | BORDER_WAIT | FUEL_PRICE | TRANSIT_TIME
+    report_type = Column(String(30), nullable=False, index=True)
+
+    # Road condition fields (report_type = ROAD_CONDITION)
+    road_surface = Column(String(20))       # PAVED | GRAVEL | DIRT | FLOODED | BLOCKED
+    condition_score = Column(Float)         # 0-100
+
+    # Border wait fields (report_type = BORDER_WAIT)
+    border_post_name = Column(String(100))
+    wait_hours = Column(Float)
+    queue_vehicles = Column(Integer)
+
+    # Fuel price fields (report_type = FUEL_PRICE)
+    fuel_type = Column(String(20))          # DIESEL | PETROL
+    fuel_price_local = Column(Numeric(18, 2, asdecimal=False))
+    fuel_price_usd = Column(Numeric(18, 2, asdecimal=False))
+
+    # Transit time fields (report_type = TRANSIT_TIME)
+    transit_hours = Column(Float)
+    segment_km = Column(Float)
+
+    # General
+    location_description = Column(String(200))
+    local_currency = Column(String(5))
+    reporter_phone_hash = Column(String(64), nullable=False, index=True)
+    reporter_count = Column(Integer, default=1)
+    reporter_type = Column(String(20), default="TRAVELER")  # TRUCKER | TRADER | TRAVELER | CUSTOMS_AGENT
+    confidence = Column(Float, default=0.45)
+    data_source = Column(String(50), default="ussd_route_report")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    country = relationship("Country")
+
+    __table_args__ = (
+        UniqueConstraint("country_id", "period_date", "corridor_code", "report_type"),
+    )
