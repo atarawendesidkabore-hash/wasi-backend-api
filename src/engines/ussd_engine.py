@@ -119,8 +119,17 @@ GOODS_CATEGORIES = {
 
 
 def _hash_phone(phone: str) -> str:
-    """SHA-256 hash of phone number for privacy compliance."""
-    return hashlib.sha256(phone.strip().encode()).hexdigest()
+    """HMAC-SHA256 hash of phone number for privacy compliance.
+
+    Uses server SECRET_KEY to prevent rainbow-table reversal.
+    """
+    import hmac
+    from src.config import settings
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        phone.strip().encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _to_usd(amount_local: float, currency: str) -> float:
@@ -160,6 +169,15 @@ class USSDMenuEngine:
         phone_hash = _hash_phone(phone_number)
         parts = text.split("*") if text else []
         level = len(parts)
+
+        # Session-phone binding: prevent session hijacking
+        existing = (
+            self.db.query(USSDSession)
+            .filter(USSDSession.session_id == session_id)
+            .first()
+        )
+        if existing and existing.phone_hash != phone_hash:
+            return "END Session invalide.", "ERROR"
 
         # Determine country from provider mapping or phone prefix
         country_code = self._detect_country(phone_number, provider_code)

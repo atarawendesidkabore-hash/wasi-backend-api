@@ -45,7 +45,7 @@ from src.schemas.ussd import (
     USSDStatusResponse,
 )
 from src.engines.ussd_engine import USSDMenuEngine, USSDDataAggregator, _to_usd
-from src.utils.security import get_current_user
+from src.utils.security import get_current_user, require_admin
 from src.utils.credits import deduct_credits
 
 logger = logging.getLogger(__name__)
@@ -522,9 +522,9 @@ async def get_mobile_money_flows(
 async def register_provider(
     payload: USSDProviderCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
-    """Register a new USSD MNO provider. Admin only (costs 10 credits)."""
+    """Register a new USSD MNO provider. Admin only."""
     deduct_credits(current_user, db, "/api/v2/ussd/providers", cost_multiplier=10.0)
 
     existing = (

@@ -263,8 +263,8 @@ class TestLedgerEngine:
 
         engine = CbdcLedgerEngine(db)
         engine.mint(cb.wallet_id, w1.wallet_id, 500_000.0, "MINT1")
-        engine.transfer(w1.wallet_id, w2.wallet_id, 100_000.0, pin="1234")
-        engine.transfer(w2.wallet_id, w1.wallet_id, 25_000.0, pin="5678")
+        engine.transfer(w1.wallet_id, w2.wallet_id, 100_000.0, channel="USSD", pin="1234")
+        engine.transfer(w2.wallet_id, w1.wallet_id, 25_000.0, channel="USSD", pin="5678")
         engine.burn(cb.wallet_id, w1.wallet_id, 50_000.0, "BURN1")
 
         all_entries = db.query(CbdcLedgerEntry).all()
@@ -284,11 +284,11 @@ class TestLedgerEngine:
         engine.mint(cb.wallet_id, w1.wallet_id, 1_000_000.0, "MINT")
 
         # w1 has Tier 1 limit of 500,000/day
-        engine.transfer(w1.wallet_id, w2.wallet_id, 400_000.0, pin="1234")
+        engine.transfer(w1.wallet_id, w2.wallet_id, 400_000.0, channel="USSD", pin="1234")
 
         # This should exceed the daily limit
         with pytest.raises(HTTPException) as exc_info:
-            engine.transfer(w1.wallet_id, w2.wallet_id, 200_000.0, pin="1234")
+            engine.transfer(w1.wallet_id, w2.wallet_id, 200_000.0, channel="USSD", pin="1234")
         assert "Daily limit exceeded" in str(exc_info.value.detail)
 
     def test_freeze_unfreeze(self, db, seed_country):
@@ -305,7 +305,7 @@ class TestLedgerEngine:
 
         # Transfer should fail
         with pytest.raises(HTTPException) as exc_info:
-            engine.transfer(w1.wallet_id, w2.wallet_id, 10_000.0, pin="1234")
+            engine.transfer(w1.wallet_id, w2.wallet_id, 10_000.0, channel="USSD", pin="1234")
         assert "frozen" in str(exc_info.value.detail)
 
         # Unfreeze
@@ -343,7 +343,7 @@ class TestLedgerEngine:
 
         engine = CbdcLedgerEngine(db)
         engine.mint(cb.wallet_id, w1.wallet_id, 200_000.0, "MINT1")
-        engine.transfer(w1.wallet_id, w2.wallet_id, 50_000.0, pin="1234")
+        engine.transfer(w1.wallet_id, w2.wallet_id, 50_000.0, channel="USSD", pin="1234")
 
         # Get w1's entries in order
         entries = db.query(CbdcLedgerEntry).filter(

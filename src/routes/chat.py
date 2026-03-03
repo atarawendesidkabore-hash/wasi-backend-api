@@ -12,11 +12,12 @@ The intelligence endpoint answers questions like:
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -30,17 +31,59 @@ router = APIRouter(prefix="/api/chat", tags=["Chat"])
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 
+# ── Security: model whitelist and token cap ───────────────────────────────────
+ALLOWED_MODELS = {
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-5-20250514",
+}
+MAX_TOKENS_CAP = 2000
+MAX_MESSAGES = 50  # prevent context-stuffing abuse
+
+# ── Security: prompt injection detection ──────────────────────────────────────
+_INJECTION_PATTERNS = [
+    re.compile(r"ignore\s+(all\s+)?previous\s+instruction", re.IGNORECASE),
+    re.compile(r"forget\s+(your|all|the)\s+(system|previous)", re.IGNORECASE),
+    re.compile(r"you\s+are\s+(now|no\s+longer)\b", re.IGNORECASE),
+    re.compile(r"(print|reveal|show|output|repeat)\s+(your\s+)?(full\s+)?(system\s+)?prompt", re.IGNORECASE),
+    re.compile(r"disregard\s+(all|any|the)\s+(above|previous)", re.IGNORECASE),
+    re.compile(r"new\s+instructions?\s*:", re.IGNORECASE),
+]
+
+# ── Financial disclaimer appended to all AI responses ─────────────────────────
+_DISCLAIMER = (
+    "\n\n---\n*WASI provides data intelligence only. This is NOT investment, "
+    "legal, or financial advice. Consult a licensed professional before making "
+    "financial decisions. WASI accepts no liability for losses.*"
+)
+
+
+def _check_injection(text: str) -> None:
+    """Reject messages containing prompt injection patterns."""
+    for pattern in _INJECTION_PATTERNS:
+        if pattern.search(text):
+            raise HTTPException(
+                status_code=400,
+                detail="Message contains disallowed instructions.",
+            )
+
+
+def _validate_model(model: str) -> str:
+    """Enforce model whitelist — prevent expensive model abuse."""
+    if model not in ALLOWED_MODELS:
+        return "claude-haiku-4-5-20251001"  # fall back to cheapest
+    return model
+
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    content: str = Field(..., max_length=10000)
 
 
 class ChatRequest(BaseModel):
     model: str = "claude-haiku-4-5-20251001"
-    max_tokens: int = 1000
+    max_tokens: int = Field(default=1000, le=MAX_TOKENS_CAP)
     system: Optional[str] = None
     messages: list[ChatMessage]
 
@@ -57,15 +100,32 @@ class IntelligenceRequest(BaseModel):
 @router.post("")
 async def proxy_chat(
     payload: ChatRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Proxy to Anthropic. Keeps API key server-side. No credit charge."""
+    """Proxy to Anthropic. Keeps API key server-side. Costs 1 credit."""
     if not settings.ANTHROPIC_API_KEY:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured.")
+        raise HTTPException(status_code=503, detail="Chat service not available.")
+
+    # Security: validate model, cap tokens, limit message count
+    safe_model = _validate_model(payload.model)
+    safe_max_tokens = min(payload.max_tokens, MAX_TOKENS_CAP)
+
+    if len(payload.messages) > MAX_MESSAGES:
+        raise HTTPException(status_code=400, detail="Too many messages in conversation.")
+
+    # Security: check all user messages AND system prompt for prompt injection
+    for msg in payload.messages:
+        if msg.role == "user":
+            _check_injection(msg.content)
+    if payload.system:
+        _check_injection(payload.system)
+
+    deduct_credits(current_user, db, "/api/chat", cost_multiplier=1.0)
 
     body = {
-        "model": payload.model,
-        "max_tokens": payload.max_tokens,
+        "model": safe_model,
+        "max_tokens": safe_max_tokens,
         "messages": [{"role": m.role, "content": m.content} for m in payload.messages],
     }
     if payload.system:
@@ -82,12 +142,19 @@ async def proxy_chat(
                 },
                 json=body,
             )
-        except httpx.RequestError as exc:
-            raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}")
+        except httpx.RequestError:
+            raise HTTPException(status_code=502, detail="Chat service temporarily unavailable")
 
     if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+        raise HTTPException(status_code=502, detail="Chat service returned an error")
+
+    # Append financial disclaimer to AI response
+    result = resp.json()
+    try:
+        result["content"][0]["text"] += _DISCLAIMER
+    except (KeyError, IndexError):
+        pass
+    return result
 
 
 # ── RAG helpers ───────────────────────────────────────────────────────────────
@@ -424,7 +491,13 @@ async def intelligence_chat(
     Costs 2 credits.
     """
     if not settings.ANTHROPIC_API_KEY:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured.")
+        raise HTTPException(status_code=503, detail="Chat service not available.")
+
+    # Security: prompt injection check on user question
+    _check_injection(payload.question)
+
+    # Security: enforce model whitelist
+    safe_model = _validate_model(payload.model)
 
     deduct_credits(current_user, db, "/api/chat/intelligence", cost_multiplier=2.0)
 
@@ -437,8 +510,8 @@ async def intelligence_chat(
     )
 
     body = {
-        "model": payload.model,
-        "max_tokens": payload.max_tokens,
+        "model": safe_model,
+        "max_tokens": min(payload.max_tokens, MAX_TOKENS_CAP),
         "system": system_with_data,
         "messages": [{"role": "user", "content": payload.question}],
     }
@@ -454,17 +527,19 @@ async def intelligence_chat(
                 },
                 json=body,
             )
-        except httpx.RequestError as exc:
-            raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}")
+        except httpx.RequestError:
+            raise HTTPException(status_code=502, detail="Chat service temporarily unavailable")
 
     if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(status_code=502, detail="Chat service returned an error")
 
     # T5: compute grounding score and inject into response metadata
     result = resp.json()
     answer_text = ""
     try:
         answer_text = result["content"][0]["text"]
+        # Append financial disclaimer
+        result["content"][0]["text"] += _DISCLAIMER
     except (KeyError, IndexError):
         pass
 

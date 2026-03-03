@@ -14,6 +14,7 @@ Design invariants:
 
 Thread-safety: relies on database-level row locking.
 """
+import math
 import uuid
 from datetime import datetime, date, timedelta
 
@@ -194,10 +195,12 @@ class CbdcLedgerEngine:
                  channel: str = "API",
                  pin: str | None = None,
                  signature: str | None = None,
+                 nonce: str | None = None,
                  policy_id: int | None = None,
                  spending_category: str | None = None,
                  memo: str | None = None,
-                 fee_ecfa: float = 0.0) -> dict:
+                 fee_ecfa: float = 0.0,
+                 _system_auth: bool = False) -> dict:
         """Execute a transfer between wallets.
 
         Validation chain:
@@ -209,8 +212,29 @@ class CbdcLedgerEngine:
           6. Policy enforcement (spending restrictions)
           7. Execute double entry
         """
-        sender = self._get_wallet(sender_wallet_id)
-        receiver = self._get_wallet(receiver_wallet_id)
+        # 0. Input validation — reject NaN, Inf, negative, zero, and self-transfers
+        if not math.isfinite(amount_ecfa) or amount_ecfa <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Transfer amount must be a positive finite number",
+            )
+        if not math.isfinite(fee_ecfa) or fee_ecfa < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Fee must be a non-negative finite number",
+            )
+        if sender_wallet_id == receiver_wallet_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot transfer to the same wallet",
+            )
+
+        # Lock wallets in sorted ID order to prevent deadlocks
+        ids = sorted([sender_wallet_id, receiver_wallet_id])
+        w1 = self._get_wallet(ids[0])
+        w2 = self._get_wallet(ids[1])
+        sender = w1 if w1.wallet_id == sender_wallet_id else w2
+        receiver = w1 if w1.wallet_id == receiver_wallet_id else w2
 
         # 1. Status checks
         if sender.status != "active":
@@ -223,17 +247,28 @@ class CbdcLedgerEngine:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Receiver wallet is {receiver.status}",
             )
-        if amount_ecfa <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Transfer amount must be positive",
-            )
 
-        # 2. Authentication
-        if channel == "USSD" and pin:
+        # 2. Authentication — mandatory for all channels
+        if _system_auth:
+            pass  # Internal system call (e.g. batch disbursements) — pre-authorized
+        elif channel == "USSD":
+            if not pin:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="PIN is required for USSD transfers",
+                )
             self._verify_wallet_pin(sender, pin)
-        elif channel == "API" and signature and sender.public_key_hex:
-            nonce = generate_nonce()
+        elif channel == "API":
+            if not signature or not sender.public_key_hex:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Signature and public key are required for API transfers",
+                )
+            if not nonce:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Nonce is required for signed API transfers",
+                )
             tx_data = build_canonical_tx_data(
                 sender_wallet_id, receiver_wallet_id, amount_ecfa, tx_type, nonce
             )
@@ -242,14 +277,19 @@ class CbdcLedgerEngine:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid transaction signature",
                 )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported channel: {channel}",
+            )
 
-        # 3. Balance check
+        # 3. Balance check — refresh from DB to defeat race conditions
+        self.db.refresh(sender)
         total = amount_ecfa + fee_ecfa
         if sender.available_balance_ecfa < total:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient balance. Required: {total:.2f}, "
-                       f"Available: {sender.available_balance_ecfa:.2f}",
+                detail="Insufficient balance",
             )
 
         # 4. Daily limit
@@ -457,6 +497,14 @@ class CbdcLedgerEngine:
 
         debit_wallet = w1 if w1.wallet_id == debit_wallet_id else w2
         credit_wallet = w1 if w1.wallet_id == credit_wallet_id else w2
+
+        # Atomic balance guard under row lock — prevents double-spend
+        # Skip for CENTRAL_BANK wallets: minting creates money from nothing
+        if debit_wallet.wallet_type != "CENTRAL_BANK" and debit_wallet.available_balance_ecfa < amount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient balance",
+            )
 
         # Get previous hash for each wallet
         debit_prev = self._get_last_entry_hash(debit_wallet_id)

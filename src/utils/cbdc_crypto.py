@@ -216,8 +216,18 @@ def generate_nonce() -> str:
 
 
 def hash_phone(phone: str) -> str:
-    """SHA-256 hash of phone number (privacy preservation)."""
-    return hashlib.sha256(phone.strip().encode("utf-8")).hexdigest()
+    """HMAC-SHA256 hash of phone number (privacy preservation).
+
+    Uses the server SECRET_KEY as HMAC key, preventing rainbow-table
+    reversal of the 10-12 digit phone number space.
+    """
+    import hmac
+    from src.config import settings
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        phone.strip().encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def build_canonical_tx_data(sender_wallet_id: str, receiver_wallet_id: str,

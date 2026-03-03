@@ -1,16 +1,24 @@
 """Pydantic schemas for eCFA CBDC transaction operations."""
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, Field
+
+ALLOWED_TX_TYPES = Literal[
+    "TRANSFER_P2P", "MERCHANT_PAYMENT", "CASH_IN", "CASH_OUT",
+    "BILL_PAYMENT", "SALARY", "GOV_DISBURSEMENT",
+]
+ALLOWED_CHANNELS = Literal["API", "USSD"]
 
 
 class TransferRequest(BaseModel):
     sender_wallet_id: str
     receiver_wallet_id: str
     amount_ecfa: float = Field(..., gt=0, description="Amount in eCFA (= XOF)")
-    tx_type: str = Field(default="TRANSFER_P2P", description="Transaction type")
-    channel: str = Field(default="API", description="API | USSD")
-    pin: str | None = Field(None, description="4-6 digit PIN (for USSD)")
+    tx_type: ALLOWED_TX_TYPES = Field(default="TRANSFER_P2P", description="Transaction type")
+    channel: ALLOWED_CHANNELS = Field(default="API", description="API | USSD")
+    pin: str | None = Field(None, min_length=4, max_length=6, description="4-6 digit PIN (for USSD)")
     signature: str | None = Field(None, description="ED25519 signature hex (for API)")
+    nonce: str | None = Field(None, description="Client-generated nonce included in signature")
     policy_id: int | None = Field(None, description="Programmable money policy ID")
     spending_category: str | None = Field(None, description="FOOD | HEALTH | EDUCATION | ANY")
     memo: str | None = Field(None, max_length=500)
@@ -24,7 +32,6 @@ class TransferResponse(BaseModel):
     fee_ecfa: float
     sender_wallet_id: str
     receiver_wallet_id: str
-    sender_new_balance: float
     is_cross_border: bool
 
 

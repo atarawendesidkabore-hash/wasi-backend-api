@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -17,10 +18,11 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 @limiter.limit("5/minute")
 async def register(request: Request, payload: UserRegister, db: Session = Depends(get_db)):
     """Register a new user. Initial x402 balance is set from FREE_TIER_BALANCE."""
-    if db.query(User).filter(User.username == payload.username).first():
-        raise HTTPException(status_code=409, detail="Username already taken")
-    if db.query(User).filter(User.email == payload.email).first():
-        raise HTTPException(status_code=409, detail="Email already registered")
+    # Generic message prevents user enumeration (H1)
+    if db.query(User).filter(
+        or_(User.username == payload.username, User.email == payload.email)
+    ).first():
+        raise HTTPException(status_code=409, detail="Registration failed. Username or email may already be in use.")
 
     user = User(
         username=payload.username,

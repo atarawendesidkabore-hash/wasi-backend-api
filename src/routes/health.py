@@ -13,8 +13,8 @@ async def health_check(db: Session = Depends(get_db)):
     db_status = "healthy"
     try:
         db.execute(text("SELECT 1"))
-    except Exception as exc:
-        db_status = f"unhealthy: {exc}"
+    except Exception:
+        db_status = "unhealthy"
 
     return {
         "status": "healthy",

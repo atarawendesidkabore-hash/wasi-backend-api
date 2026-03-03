@@ -17,7 +17,7 @@ client = TestClient(app, raise_server_exceptions=False)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _register_and_login(username="bankuser", email="bank@test.com", password="bankpass1"):
+def _register_and_login(username="bankuser", email="bank@test.com", password="BankPass1"):
     client.post(
         "/api/auth/register",
         json={"username": username, "email": email, "password": password},

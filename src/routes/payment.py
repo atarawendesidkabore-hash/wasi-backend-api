@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from src.database.connection import get_db
 from src.database.models import User, X402Transaction
 from src.schemas.payment import TopupRequest, PaymentStatusResponse, TransactionResponse
-from src.utils.security import get_current_user
+from src.utils.security import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/payment", tags=["Payment"])
 
@@ -12,10 +12,10 @@ router = APIRouter(prefix="/api/payment", tags=["Payment"])
 async def topup_credits(
     payload: TopupRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """
-    Add x402 credits to a user's balance.
+    Add x402 credits to a user's balance. ADMIN ONLY.
     The reference_id must be unique (prevents double-spend / idempotency guard).
     """
     if db.query(X402Transaction).filter(

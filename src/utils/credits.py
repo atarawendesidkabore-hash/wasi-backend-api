@@ -32,27 +32,35 @@ def deduct_credits(
         _log_query(db, user.id, endpoint, method, 0.0)
         return 0.0
 
-    if user.x402_balance < cost:
+    # Lock the user row to prevent concurrent deductions (race condition fix)
+    locked_user = db.query(User).filter(User.id == user.id).with_for_update().first()
+    if not locked_user:
         raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"Insufficient x402 balance. Required: {cost}, Available: {user.x402_balance}",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
         )
 
-    balance_before = user.x402_balance
-    user.x402_balance -= cost
+    if locked_user.x402_balance < cost:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Insufficient x402 balance",
+        )
+
+    balance_before = locked_user.x402_balance
+    locked_user.x402_balance -= cost
 
     tx = X402Transaction(
-        user_id=user.id,
+        user_id=locked_user.id,
         transaction_type="deduct",
         amount=cost,
         balance_before=balance_before,
-        balance_after=user.x402_balance,
+        balance_after=locked_user.x402_balance,
         reference_id=f"query-{uuid.uuid4().hex[:16]}",
         description=f"Query: {method} {endpoint}",
         status="completed",
     )
     db.add(tx)
-    _log_query(db, user.id, endpoint, method, cost)
+    _log_query(db, locked_user.id, endpoint, method, cost)
     db.commit()
     db.refresh(user)
     return cost

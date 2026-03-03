@@ -20,6 +20,7 @@ class User(Base):
     x402_balance = Column(Float, default=0.0, nullable=False)
     tier = Column(String(20), default="free", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

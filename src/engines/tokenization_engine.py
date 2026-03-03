@@ -228,7 +228,7 @@ class TokenizationEngine:
         declared_value = float(metrics.get("declared_value_cfa", 0))
         raw_credit = declared_value * (credit_rate / 100.0)
 
-        # Cap enforcement
+        # Cap enforcement — lock existing ledger rows to prevent concurrent over-crediting
         fiscal_year = p_date.year
         cumulative = (
             self.db.query(func.coalesce(func.sum(TaxCreditLedger.amount_cfa), 0.0))
@@ -237,6 +237,7 @@ class TokenizationEngine:
                 TaxCreditLedger.fiscal_year == fiscal_year,
                 TaxCreditLedger.credit_type == "EARNED",
             )
+            .with_for_update()
             .scalar()
         ) or 0.0
 
@@ -844,6 +845,7 @@ class PaymentDisbursementEngine:
                 amount_ecfa=payment.amount_cfa,
                 tx_type="GOV_DISBURSEMENT",
                 channel="BATCH",
+                _system_auth=True,
             )
             payment.ecfa_transaction_id = result.get("transaction_id")
             return True

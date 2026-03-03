@@ -70,6 +70,18 @@ async def get_current_user(
     return user
 
 
+async def require_admin(
+    current_user=Depends(get_current_user),
+):
+    """Reject non-admin users with 403."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return current_user
+
+
 def require_cbdc_role(allowed_wallet_types: list[str]):
     """FastAPI dependency that checks the user owns a CBDC wallet of the required type.
 
@@ -93,7 +105,7 @@ def require_cbdc_role(allowed_wallet_types: list[str]):
         if not wallet:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Requires wallet type: {', '.join(allowed_wallet_types)}",
+                detail="Insufficient permissions for this operation",
             )
         return wallet
     return _check_role

@@ -18,10 +18,12 @@ from slowapi.util import get_remote_address
 
 from src.database.connection import get_db
 from src.database.models import User
-from src.database.cbdc_models import CbdcTransaction
-from src.utils.security import get_current_user
+from src.database.cbdc_models import CbdcTransaction, CbdcWallet
+from src.utils.security import get_current_user, require_cbdc_role, require_admin
 from src.utils.credits import deduct_credits
 from src.engines.cbdc_ledger_engine import CbdcLedgerEngine
+
+
 from src.schemas.cbdc_transaction import (
     TransferRequest, TransferResponse,
     MintRequest, MintResponse,
@@ -29,6 +31,15 @@ from src.schemas.cbdc_transaction import (
     TransactionStatusResponse,
     TransactionHistoryItem, TransactionHistoryResponse,
 )
+
+def _verify_wallet_ownership(db, wallet_id: str, user_id: int) -> None:
+    """Verify that the given wallet belongs to the authenticated user."""
+    wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == wallet_id).first()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+    if wallet.user_id is not None and wallet.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Access denied to this wallet")
+
 
 router = APIRouter(prefix="/api/v3/ecfa/tx", tags=["eCFA Transactions"])
 limiter = Limiter(key_func=get_remote_address)
@@ -44,6 +55,7 @@ async def send_ecfa(
 ):
     """Send eCFA between wallets (P2P, P2B, or any transfer type)."""
     deduct_credits(current_user, db, "/api/v3/ecfa/tx/send", "POST", 2.0)
+    _verify_wallet_ownership(db, body.sender_wallet_id, current_user.id)
 
     engine = CbdcLedgerEngine(db)
     result = engine.transfer(
@@ -54,6 +66,7 @@ async def send_ecfa(
         channel=body.channel,
         pin=body.pin,
         signature=body.signature,
+        nonce=body.nonce,
         policy_id=body.policy_id,
         spending_category=body.spending_category,
         memo=body.memo,
@@ -72,6 +85,7 @@ async def merchant_payment(
 ):
     """Pay a merchant with eCFA. Enforces spending category restrictions."""
     deduct_credits(current_user, db, "/api/v3/ecfa/tx/merchant-pay", "POST", 2.0)
+    _verify_wallet_ownership(db, body.sender_wallet_id, current_user.id)
 
     engine = CbdcLedgerEngine(db)
     result = engine.transfer(
@@ -82,6 +96,7 @@ async def merchant_payment(
         channel=body.channel,
         pin=body.pin,
         signature=body.signature,
+        nonce=body.nonce,
         policy_id=body.policy_id,
         spending_category=body.spending_category,
         memo=body.memo,
@@ -100,6 +115,7 @@ async def cash_in(
 ):
     """Agent cash-in: convert physical CFA to eCFA."""
     deduct_credits(current_user, db, "/api/v3/ecfa/tx/cash-in", "POST", 1.0)
+    _verify_wallet_ownership(db, body.sender_wallet_id, current_user.id)
 
     engine = CbdcLedgerEngine(db)
     result = engine.transfer(
@@ -124,6 +140,7 @@ async def cash_out(
 ):
     """Agent cash-out: convert eCFA to physical CFA."""
     deduct_credits(current_user, db, "/api/v3/ecfa/tx/cash-out", "POST", 1.0)
+    _verify_wallet_ownership(db, body.sender_wallet_id, current_user.id)
 
     engine = CbdcLedgerEngine(db)
     result = engine.transfer(
@@ -144,7 +161,8 @@ async def mint_ecfa(
     request: Request,
     body: MintRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Mint new eCFA (Central Bank only)."""
     deduct_credits(current_user, db, "/api/v3/ecfa/tx/mint", "POST", 10.0)
@@ -167,7 +185,8 @@ async def burn_ecfa(
     request: Request,
     body: BurnRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Burn eCFA (Central Bank only)."""
     deduct_credits(current_user, db, "/api/v3/ecfa/tx/burn", "POST", 10.0)
@@ -200,6 +219,13 @@ async def get_transaction_status(
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    # IDOR protection: user must own sender or receiver wallet
+    user_wallets = {w.wallet_id for w in db.query(CbdcWallet.wallet_id).filter(
+        CbdcWallet.user_id == current_user.id
+    ).all()}
+    if tx.sender_wallet_id not in user_wallets and tx.receiver_wallet_id not in user_wallets:
+        raise HTTPException(status_code=403, detail="Access denied to this transaction")
+
     return TransactionStatusResponse.model_validate(tx)
 
 
@@ -215,6 +241,7 @@ async def get_transaction_history(
 ):
     """Get paginated transaction history for a wallet."""
     deduct_credits(current_user, db, "/api/v3/ecfa/tx/history", "GET", 1.0)
+    _verify_wallet_ownership(db, wallet_id, current_user.id)
 
     # Count total
     total = db.query(CbdcTransaction).filter(

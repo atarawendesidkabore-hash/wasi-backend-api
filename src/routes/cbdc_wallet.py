@@ -20,7 +20,7 @@ from slowapi.util import get_remote_address
 from src.database.connection import get_db
 from src.database.models import User, Country
 from src.database.cbdc_models import CbdcWallet, KYC_TIER_LIMITS
-from src.utils.security import get_current_user
+from src.utils.security import get_current_user, require_admin
 from src.utils.credits import deduct_credits
 from src.utils.cbdc_crypto import generate_wallet_id, hash_pin, hash_phone
 from src.utils.cbdc_audit import log_wallet_created
@@ -67,8 +67,13 @@ async def create_wallet(
             detail=f"Invalid wallet type. Must be one of: {', '.join(sorted(VALID_WALLET_TYPES))}",
         )
 
-    # Determine KYC tier
+    # Institutional wallet types require is_admin flag on user account
     if wtype in ("CENTRAL_BANK", "COMMERCIAL_BANK"):
+        if not getattr(current_user, "is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required to create institutional wallets",
+            )
         kyc_tier = 3
     else:
         kyc_tier = 0
@@ -124,6 +129,13 @@ async def get_balance(
     """Get wallet balance with ledger verification."""
     deduct_credits(current_user, db, "/api/v3/ecfa/wallet/balance", "GET", 1.0)
 
+    # IDOR protection: verify the wallet belongs to the current user
+    wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == wallet_id).first()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+    if wallet.user_id is not None and wallet.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied to this wallet")
+
     engine = CbdcLedgerEngine(db)
     result = engine.get_balance(wallet_id)
     return WalletBalanceResponse(**result)
@@ -143,6 +155,9 @@ async def get_wallet_info(
     wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == wallet_id).first()
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet not found")
+    # IDOR protection: verify the wallet belongs to the current user
+    if wallet.user_id is not None and wallet.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied to this wallet")
 
     country = db.query(Country).filter(Country.id == wallet.country_id).first()
 
@@ -193,10 +208,17 @@ async def freeze_wallet(
     request: Request,
     body: WalletFreezeRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
-    """Freeze a wallet (admin/compliance action)."""
+    """Freeze a wallet (admin only)."""
     deduct_credits(current_user, db, "/api/v3/ecfa/wallet/freeze", "POST", 5.0)
+
+    # Ownership check: verify admin_wallet_id belongs to current_user
+    admin_wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == body.admin_wallet_id).first()
+    if not admin_wallet:
+        raise HTTPException(status_code=404, detail="Admin wallet not found")
+    if admin_wallet.user_id is not None and admin_wallet.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Admin wallet does not belong to you")
 
     engine = CbdcLedgerEngine(db)
     result = engine.freeze_wallet(
@@ -212,10 +234,17 @@ async def unfreeze_wallet(
     request: Request,
     body: WalletFreezeRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
-    """Unfreeze a previously frozen wallet."""
+    """Unfreeze a previously frozen wallet (admin only)."""
     deduct_credits(current_user, db, "/api/v3/ecfa/wallet/unfreeze", "POST", 5.0)
+
+    # Ownership check: verify admin_wallet_id belongs to current_user
+    admin_wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == body.admin_wallet_id).first()
+    if not admin_wallet:
+        raise HTTPException(status_code=404, detail="Admin wallet not found")
+    if admin_wallet.user_id is not None and admin_wallet.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Admin wallet does not belong to you")
 
     engine = CbdcLedgerEngine(db)
     result = engine.unfreeze_wallet(

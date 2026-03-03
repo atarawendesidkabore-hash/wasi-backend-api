@@ -27,7 +27,7 @@ from src.database.models import User
 from src.database.cbdc_models import (
     CbdcPolicy, CbdcSettlement, CbdcAmlAlert, CbdcMonetaryAggregate,
 )
-from src.utils.security import get_current_user
+from src.utils.security import get_current_user, require_cbdc_role, require_admin
 from src.utils.credits import deduct_credits
 from src.engines.cbdc_settlement_engine import CbdcSettlementEngine
 from src.engines.cbdc_compliance_engine import CbdcComplianceEngine
@@ -50,7 +50,8 @@ async def create_policy(
     request: Request,
     body: PolicyCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Create a programmable money policy (Central Bank only)."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/policy/create", "POST", 10.0)
@@ -81,6 +82,7 @@ async def list_policies(
     active_only: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """List programmable money policies."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/policy/list", "GET", 1.0)
@@ -102,6 +104,7 @@ async def get_monetary_aggregates(
     country_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Get daily monetary aggregates for a WAEMU country."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/monetary-aggregates", "GET", 3.0)
@@ -123,6 +126,7 @@ async def get_pending_settlements(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """View pending settlements awaiting RTGS confirmation."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/settlement/pending", "GET", 2.0)
@@ -139,7 +143,8 @@ async def get_pending_settlements(
 async def run_domestic_settlement(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Trigger domestic inter-bank netting settlement."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/settlement/run-domestic", "POST", 10.0)
@@ -154,7 +159,8 @@ async def run_domestic_settlement(
 async def run_cross_border_settlement(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Trigger cross-border WAEMU netting settlement."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/settlement/run-cross-border", "POST", 10.0)
@@ -171,6 +177,7 @@ async def get_settlement_cobol(
     settlement_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Get COBOL-formatted settlement record for STAR-UEMOA."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/settlement/cobol", "GET", 2.0)
@@ -213,6 +220,7 @@ async def aml_dashboard(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """AML alert dashboard summary."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/aml/dashboard", "GET", 3.0)
@@ -255,6 +263,7 @@ async def list_aml_alerts(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """List AML alerts filtered by status and severity."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/aml/alerts", "GET", 2.0)
@@ -274,7 +283,8 @@ async def resolve_aml_alert(
     alert_id: str,
     body: AmlResolveRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Resolve an AML alert."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/aml/resolve", "POST", 5.0)
@@ -310,7 +320,8 @@ async def resolve_aml_alert(
 async def run_compliance_sweep(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Trigger manual AML compliance sweep across all wallets with recent activity."""
     deduct_credits(current_user, db, "/api/v3/ecfa/admin/aml/sweep", "POST", 10.0)

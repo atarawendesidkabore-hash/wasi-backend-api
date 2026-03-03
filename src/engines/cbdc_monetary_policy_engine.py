@@ -125,6 +125,19 @@ class CbdcMonetaryPolicyEngine:
         if rate_type not in valid_types:
             raise ValueError(f"Invalid rate_type. Must be one of: {valid_types}")
 
+        # Bounds validation — BCEAO rates must be within realistic range
+        RATE_BOUNDS = {
+            "TAUX_DIRECTEUR": (-1.0, 25.0),
+            "TAUX_PRET_MARGINAL": (-1.0, 30.0),
+            "TAUX_DEPOT": (-2.0, 20.0),
+            "TAUX_RESERVE": (0.0, 50.0),
+        }
+        low, high = RATE_BOUNDS[rate_type]
+        if not (low <= new_rate_percent <= high):
+            raise ValueError(
+                f"{rate_type} must be between {low}% and {high}% (got {new_rate_percent}%)"
+            )
+
         eff_date = effective_date or date.today()
 
         # Supersede old rate

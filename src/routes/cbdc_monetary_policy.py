@@ -39,7 +39,7 @@ from slowapi.util import get_remote_address
 from src.database.connection import get_db
 from src.database.models import User
 from src.database.cbdc_models import CbdcEligibleCollateral
-from src.utils.security import get_current_user
+from src.utils.security import get_current_user, require_cbdc_role, require_admin
 from src.utils.credits import deduct_credits
 from src.engines.cbdc_monetary_policy_engine import CbdcMonetaryPolicyEngine
 from src.schemas.cbdc_monetary_policy import (
@@ -79,7 +79,8 @@ async def set_policy_rate(
     request: Request,
     body: SetPolicyRateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Set a new BCEAO policy rate.
 
@@ -137,7 +138,8 @@ async def set_reserve_ratio(
     request: Request,
     body: SetReserveRatioRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Set a new reserve requirement ratio for all commercial banks."""
     deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/reserves/set-ratio", "POST", 20.0)
@@ -154,6 +156,7 @@ async def open_lending_facility(
     body: OpenLendingRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """Bank borrows from BCEAO at taux de prêt marginal."""
     deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/lending", "POST", 10.0)
@@ -177,6 +180,7 @@ async def open_deposit_facility(
     body: OpenDepositRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """Bank deposits excess liquidity at BCEAO at taux de dépôt."""
     deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/deposit", "POST", 10.0)
@@ -196,7 +200,8 @@ async def open_deposit_facility(
 async def mature_facilities(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Process all matured standing facilities (repay lending, return deposits)."""
     deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/mature", "POST", 10.0)
@@ -212,7 +217,8 @@ async def mature_facilities(
 async def apply_daily_interest(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Apply daily interest accrual and demurrage across all wallets."""
     deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/interest/apply-daily", "POST", 10.0)
@@ -275,7 +281,8 @@ async def record_policy_decision(
     request: Request,
     body: PolicyDecisionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Record a Comité de Politique Monétaire decision and apply rate changes."""
     deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/decision/record", "POST", 20.0)
@@ -322,7 +329,8 @@ async def register_collateral(
     request: Request,
     body: RegisterCollateralRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
+    _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """Register an eligible collateral asset for lending facility operations."""
     deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/collateral/register", "POST", 5.0)

@@ -12,6 +12,7 @@ Schedule:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import random
@@ -26,6 +27,7 @@ from src.database.tokenization_models import (
     FasoMeaboWorker, WorkerCheckIn, PaymentDisbursement,
     TokenizationDailyAggregate,
 )
+from src.config import settings
 from src.engines.tokenization_engine import PaymentDisbursementEngine
 
 logger = logging.getLogger(__name__)
@@ -389,7 +391,7 @@ def seed_tokenization_demo_data(db=None) -> int:
 
                 for i in range(n_reports):
                     phone = f"+{cc}{random.randint(700000000, 799999999)}"
-                    phone_hash = hashlib.sha256(phone.encode()).hexdigest()
+                    phone_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), phone.encode("utf-8"), hashlib.sha256).hexdigest()
                     act_type = random.choice(ACTIVITY_TYPES)
                     region = random.choice(regions)
                     payment = ACTIVITY_PAYMENTS[act_type]
@@ -449,7 +451,7 @@ def seed_tokenization_demo_data(db=None) -> int:
 
                 for b in range(n_businesses):
                     biz_phone = f"+{cc}BIZ{b:04d}"
-                    biz_hash = hashlib.sha256(biz_phone.encode()).hexdigest()
+                    biz_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), biz_phone.encode("utf-8"), hashlib.sha256).hexdigest()
                     biz_type = random.choice(BUSINESS_TYPES)
                     tier = random.choice(["A", "B", "C"])
                     metric = random.choice(METRIC_TYPES_BY_TIER[tier])
@@ -525,7 +527,7 @@ def seed_tokenization_demo_data(db=None) -> int:
                 name_template = random.choice(CONTRACT_NAMES)
                 contract_name = name_template.format(n=random.randint(1, 20), region=region)
                 contractor_phone = f"+{cc}CONT{c:03d}"
-                contractor_hash = hashlib.sha256(contractor_phone.encode()).hexdigest()
+                contractor_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), contractor_phone.encode("utf-8"), hashlib.sha256).hexdigest()
 
                 n_milestones = random.randint(3, 6)
                 for m in range(1, n_milestones + 1):
@@ -557,7 +559,7 @@ def seed_tokenization_demo_data(db=None) -> int:
                         db.flush()
                         for v in range(random.randint(2, 5)):
                             v_phone = f"+{cc}VER{c:03d}{m}{v}"
-                            v_hash = hashlib.sha256(v_phone.encode()).hexdigest()
+                            v_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), v_phone.encode("utf-8"), hashlib.sha256).hexdigest()
                             v_type = random.choices(
                                 ["CITIZEN", "INSPECTOR", "CONTRACTOR"],
                                 weights=[6, 3, 1],
@@ -578,7 +580,7 @@ def seed_tokenization_demo_data(db=None) -> int:
             n_workers = max(2, scale // 4)
             for w in range(n_workers):
                 w_phone = f"+{cc}WRK{w:04d}"
-                w_hash = hashlib.sha256(w_phone.encode()).hexdigest()
+                w_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), w_phone.encode("utf-8"), hashlib.sha256).hexdigest()
                 skill = random.choice(SKILL_TYPES)
 
                 worker = FasoMeaboWorker(
@@ -639,7 +641,7 @@ def seed_tokenization_demo_data(db=None) -> int:
                 target_date = today - timedelta(days=day_offset)
                 for _ in range(random.randint(5, 20)):
                     phone = f"+{cc}{random.randint(700000000, 799999999)}"
-                    phone_hash = hashlib.sha256(phone.encode()).hexdigest()
+                    phone_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), phone.encode("utf-8"), hashlib.sha256).hexdigest()
                     p_type = random.choice(["CITIZEN_DATA_INCOME", "WORKER_WAGE"])
                     pillar = "CITIZEN_DATA" if p_type == "CITIZEN_DATA_INCOME" else "FASO_MEABO"
                     amt = random.choice([50, 75, 100, 150, 200, 2500, 3000, 3500])

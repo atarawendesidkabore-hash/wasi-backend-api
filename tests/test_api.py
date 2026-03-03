@@ -28,7 +28,7 @@ def test_health_check():
 def test_register_user():
     response = client.post(
         "/api/auth/register",
-        json={"username": "testuser", "email": "test@example.com", "password": "securepass123"},
+        json={"username": "testuser", "email": "test@example.com", "password": "SecurePass123"},
     )
     assert response.status_code == 201
     data = response.json()
@@ -41,7 +41,7 @@ def test_register_user():
 
 
 def test_register_duplicate_username():
-    payload = {"username": "dup", "email": "dup@example.com", "password": "pass12345"}
+    payload = {"username": "dup", "email": "dup@example.com", "password": "Pass12345"}
     client.post("/api/auth/register", json=payload)
     response = client.post(
         "/api/auth/register",
@@ -53,22 +53,33 @@ def test_register_duplicate_username():
 def test_register_duplicate_email():
     client.post(
         "/api/auth/register",
-        json={"username": "user1", "email": "shared@example.com", "password": "pass12345"},
+        json={"username": "user1", "email": "shared@example.com", "password": "Pass12345"},
     )
     response = client.post(
         "/api/auth/register",
-        json={"username": "user2", "email": "shared@example.com", "password": "pass12345"},
+        json={"username": "user2", "email": "shared@example.com", "password": "Pass12345"},
     )
     assert response.status_code == 409
 
 
 # ── Auth: login ──────────────────────────────────────────────────────────────
 
-def _register_and_login(username="admin", email="admin@test.com", password="adminpass1"):
+from tests.conftest import TestingSessionLocal
+from src.database.models import User
+
+
+def _register_and_login(username="testadm", email="testadm@test.com", password="AdminPass1", is_admin=False):
     client.post(
         "/api/auth/register",
         json={"username": username, "email": email, "password": password},
     )
+    if is_admin:
+        db = TestingSessionLocal()
+        user = db.query(User).filter(User.username == username).first()
+        if user:
+            user.is_admin = True
+            db.commit()
+        db.close()
     response = client.post(
         "/api/auth/login",
         data={"username": username, "password": password},
@@ -80,11 +91,11 @@ def _register_and_login(username="admin", email="admin@test.com", password="admi
 def test_login_success():
     client.post(
         "/api/auth/register",
-        json={"username": "loginuser", "email": "login@test.com", "password": "testpass456"},
+        json={"username": "loginuser", "email": "login@test.com", "password": "TestPass456"},
     )
     response = client.post(
         "/api/auth/login",
-        data={"username": "loginuser", "password": "testpass456"},
+        data={"username": "loginuser", "password": "TestPass456"},
     )
     assert response.status_code == 200
     data = response.json()
@@ -96,7 +107,7 @@ def test_login_success():
 def test_login_wrong_password():
     client.post(
         "/api/auth/register",
-        json={"username": "wrongpw", "email": "wrong@test.com", "password": "rightpassword"},
+        json={"username": "wrongpw", "email": "wrong@test.com", "password": "RightPass1"},
     )
     response = client.post(
         "/api/auth/login",
@@ -117,7 +128,7 @@ def test_get_me():
     token = _register_and_login()
     response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    assert response.json()["username"] == "admin"
+    assert response.json()["username"] == "testadm"
 
 
 def test_protected_endpoint_without_token():
@@ -128,7 +139,7 @@ def test_protected_endpoint_without_token():
 # ── Payment ──────────────────────────────────────────────────────────────────
 
 def test_topup_credits():
-    token = _register_and_login()
+    token = _register_and_login(is_admin=True)
     headers = {"Authorization": f"Bearer {token}"}
 
     response = client.post(
@@ -142,7 +153,7 @@ def test_topup_credits():
 
 
 def test_topup_duplicate_reference():
-    token = _register_and_login(username="payer", email="payer@test.com")
+    token = _register_and_login(username="payer", email="payer@test.com", is_admin=True)
     headers = {"Authorization": f"Bearer {token}"}
 
     payload = {"amount": 10.0, "reference_id": "ref-unique-abc"}

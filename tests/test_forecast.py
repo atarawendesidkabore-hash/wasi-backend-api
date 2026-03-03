@@ -20,7 +20,7 @@ client = TestClient(app, raise_server_exceptions=False)
 
 # ── Helpers ──────────────────────────────────────────────────────
 
-def _register_and_login(username="fc_user", email="fc@test.com", password="fcpass123"):
+def _register_and_login(username="fc_user", email="fc@test.com", password="FcPass123"):
     client.post(
         "/api/auth/register",
         json={"username": username, "email": email, "password": password},

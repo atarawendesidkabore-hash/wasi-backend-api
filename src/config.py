@@ -50,3 +50,11 @@ if settings.SECRET_KEY == _DEFAULT_SECRET_KEY:
         "Set a strong SECRET_KEY before deploying.",
         stacklevel=1,
     )
+
+# Production guard: refuse wildcard CORS with credentials (credential theft risk)
+if not settings.DEBUG and "*" in settings.CORS_ORIGINS:
+    raise RuntimeError(
+        "FATAL: CORS_ORIGINS contains '*' in production. "
+        "Wildcard CORS with allow_credentials=True allows any website to "
+        "make authenticated API calls. Set explicit origins in CORS_ORIGINS."
+    )
