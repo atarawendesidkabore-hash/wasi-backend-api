@@ -284,3 +284,37 @@ class ForecastEngine:
         result["last_actual_year"] = years[-1] if years else None
         result["last_actual_value"] = round(values[-1], 4) if values else None
         return result
+
+    def forecast_stock_market(
+        self,
+        exchange_code: str,
+        values: List[float],
+        dates: List[date],
+        horizon_months: int = 6,
+        confidence: float = 0.85,
+    ) -> Dict:
+        """Forecast stock market index for a West African exchange (NGX/GSE/BRVM)."""
+        result = self.forecast_ensemble(values, horizon_months, confidence)
+        result["target_type"] = "stock_market"
+        result["target_code"] = exchange_code
+        result["last_actual_date"] = str(dates[-1]) if dates else None
+        result["last_actual_value"] = round(values[-1], 4) if values else None
+        return result
+
+    def forecast_ecfa_supply(
+        self,
+        country_code: str,
+        aggregate: str,
+        values: List[float],
+        dates: List[date],
+        horizon_months: int = 6,
+        confidence: float = 0.90,
+    ) -> Dict:
+        """Forecast eCFA monetary aggregate (M0/M1/M2/circulation/velocity)."""
+        result = self.forecast_ensemble(values, horizon_months, confidence)
+        result["target_type"] = f"ecfa_{aggregate}"
+        result["target_code"] = country_code
+        result["aggregate"] = aggregate
+        result["last_actual_date"] = str(dates[-1]) if dates else None
+        result["last_actual_value"] = round(values[-1], 4) if values else None
+        return result

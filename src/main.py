@@ -41,6 +41,7 @@ from src.routes.cbdc_monetary_policy import router as cbdc_monetary_policy_route
 from src.routes.cbdc_payments import router as cbdc_payments_router
 from src.routes.forecast import router as forecast_router
 from src.routes.tokenization import router as tokenization_router
+from src.routes.risk import router as risk_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -422,6 +423,7 @@ app.include_router(cbdc_monetary_policy_router)
 app.include_router(cbdc_payments_router)
 app.include_router(forecast_router)
 app.include_router(tokenization_router)
+app.include_router(risk_router)
 
 
 @app.get("/", tags=["Root"])

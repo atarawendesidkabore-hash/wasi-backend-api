@@ -16,6 +16,7 @@ Endpoints:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 from datetime import date, timedelta
 from typing import Optional
@@ -45,6 +46,7 @@ from src.engines.tokenization_engine import (
 )
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +187,7 @@ async def submit_business_data(
     deduct_credits(current_user, db, "/api/v3/tokenization/business/submit", cost_multiplier=2.0)
 
     engine = TokenizationEngine(db)
-    phone_hash = hashlib.sha256(current_user.username.encode()).hexdigest()
+    phone_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), current_user.username.encode("utf-8"), hashlib.sha256).hexdigest()
 
     result = engine.create_business_token(
         country_code=req.country_code.upper(),
@@ -311,7 +313,7 @@ async def verify_milestone(
         raise HTTPException(status_code=404, detail="Milestone not found")
 
     engine = TokenizationEngine(db)
-    phone_hash = hashlib.sha256(current_user.username.encode()).hexdigest()
+    phone_hash = hmac.new(settings.SECRET_KEY.encode("utf-8"), current_user.username.encode("utf-8"), hashlib.sha256).hexdigest()
 
     result = engine.submit_milestone_verification(
         milestone_id=milestone.id,

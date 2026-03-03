@@ -25,9 +25,11 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Path, Header
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Header, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.database.connection import get_db
 from src.database.models import User, Country
@@ -51,6 +53,7 @@ from src.utils.credits import deduct_credits
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/ussd", tags=["USSD Integration"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Helper: authenticate MNO provider by API key ─────────────────────
@@ -73,8 +76,10 @@ def _verify_provider(api_key: str, db: Session) -> USSDProvider:
 # ══════════════════════════════════════════════════════════════════════
 
 @router.post("/callback", response_model=USSDCallbackResponse)
+@limiter.limit("120/minute")
 async def ussd_callback(
-    request: USSDCallbackRequest,
+    request: Request,
+    payload: USSDCallbackRequest,
     x_provider_key: str = Header(..., alias="X-Provider-Key"),
     db: Session = Depends(get_db),
 ):
@@ -93,10 +98,10 @@ async def ussd_callback(
 
     engine = USSDMenuEngine(db)
     response_text, session_type = engine.process_callback(
-        session_id=request.sessionId,
-        service_code=request.serviceCode,
-        phone_number=request.phoneNumber,
-        text=request.text,
+        session_id=payload.sessionId,
+        service_code=payload.serviceCode,
+        phone_number=payload.phoneNumber,
+        text=payload.text,
         provider_code=provider_code,
     )
 

@@ -35,6 +35,8 @@ _engine = ForecastEngine()
 VALID_HORIZONS = {3, 6, 12}
 VALID_COMMODITIES = {"COCOA", "BRENT", "GOLD", "COTTON", "COFFEE", "IRON_ORE"}
 VALID_INDICATORS = {"gdp_growth", "inflation"}
+VALID_EXCHANGES = {"NGX", "GSE", "BRVM"}
+VALID_ECFA_AGGREGATES = {"circulation", "m0", "m1", "m2", "velocity"}
 INDICATOR_COLUMNS = {"gdp_growth": "gdp_growth_pct", "inflation": "inflation_pct"}
 CACHE_MAX_AGE_HOURS = 24
 
@@ -378,6 +380,109 @@ async def forecast_macro(
 
     confidence = rows[-1].confidence or 0.85 if rows else 0.85
     result = _engine.forecast_macro(cc, indicator, values, years, horizon, confidence)
+    _persist_forecast(db, result, horizon)
+    db.commit()
+    return _build_response(result)
+
+
+@router.get("/stock/{exchange_code}", response_model=ForecastResponse)
+async def forecast_stock_market(
+    exchange_code: str,
+    horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Forecast a West African stock exchange index (NGX/GSE/BRVM). Costs 3 credits."""
+    deduct_credits(current_user, db, "/api/v3/forecast/stock", cost_multiplier=3.0)
+
+    code = exchange_code.upper()
+    if code not in VALID_EXCHANGES:
+        raise HTTPException(status_code=400, detail=f"Invalid exchange. Valid: {sorted(VALID_EXCHANGES)}")
+    if horizon not in VALID_HORIZONS:
+        raise HTTPException(status_code=400, detail=f"horizon must be one of {sorted(VALID_HORIZONS)}")
+
+    cached = _get_cached_forecast(db, "stock_market", code, horizon)
+    if cached:
+        return cached
+
+    try:
+        from src.database.models import StockMarketData
+        rows = (
+            db.query(StockMarketData)
+            .filter(StockMarketData.exchange_code == code)
+            .order_by(StockMarketData.period_date.asc())
+            .all()
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Stock market data not available")
+
+    if len(rows) < 3:
+        raise HTTPException(status_code=404, detail=f"Insufficient stock data for {code}")
+
+    values = [r.index_value for r in rows if r.index_value is not None]
+    dates = [r.period_date for r in rows if r.index_value is not None]
+    if len(values) < 3:
+        raise HTTPException(status_code=404, detail=f"Insufficient data for {code}")
+
+    avg_conf = sum(r.confidence or 0.85 for r in rows) / len(rows)
+    result = _engine.forecast_stock_market(code, values, dates, horizon, avg_conf)
+    _persist_forecast(db, result, horizon)
+    db.commit()
+    return _build_response(result)
+
+
+@router.get("/ecfa/{country_code}/{aggregate}", response_model=ForecastResponse)
+async def forecast_ecfa_monetary(
+    country_code: str,
+    aggregate: str,
+    horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Forecast eCFA monetary aggregate for a WAEMU country. Costs 3 credits.
+
+    Aggregates: circulation, m0, m1, m2, velocity.
+    """
+    deduct_credits(current_user, db, "/api/v3/forecast/ecfa", cost_multiplier=3.0)
+
+    agg = aggregate.lower()
+    if agg not in VALID_ECFA_AGGREGATES:
+        raise HTTPException(status_code=400, detail=f"Invalid aggregate. Valid: {sorted(VALID_ECFA_AGGREGATES)}")
+    if horizon not in VALID_HORIZONS:
+        raise HTTPException(status_code=400, detail=f"horizon must be one of {sorted(VALID_HORIZONS)}")
+
+    cc = country_code.upper()
+    target_type = f"ecfa_{agg}"
+    cached = _get_cached_forecast(db, target_type, cc, horizon)
+    if cached:
+        return cached
+
+    AGGREGATE_COLUMN = {
+        "circulation": "total_ecfa_circulation",
+        "m0": "m0_base_money_ecfa",
+        "m1": "m1_narrow_money_ecfa",
+        "m2": "m2_broad_money_ecfa",
+        "velocity": "velocity",
+    }
+
+    try:
+        from src.database.cbdc_models import CbdcMonetaryAggregate
+        rows = (
+            db.query(CbdcMonetaryAggregate)
+            .filter(CbdcMonetaryAggregate.country_code == cc)
+            .order_by(CbdcMonetaryAggregate.snapshot_date.asc())
+            .all()
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="eCFA monetary data not available")
+
+    col = AGGREGATE_COLUMN[agg]
+    values = [getattr(r, col) for r in rows if getattr(r, col, None) is not None]
+    dates = [r.snapshot_date for r in rows if getattr(r, col, None) is not None]
+    if len(values) < 3:
+        raise HTTPException(status_code=404, detail=f"Insufficient eCFA data for {cc}/{agg}")
+
+    result = _engine.forecast_ecfa_supply(cc, agg, values, dates, horizon, 0.90)
     _persist_forecast(db, result, horizon)
     db.commit()
     return _build_response(result)
