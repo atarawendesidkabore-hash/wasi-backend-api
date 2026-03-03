@@ -1,0 +1,49 @@
+# ── WASI Backend — Docker Compose ────────────────────────────────
+# Usage:
+#   docker compose up --build        # start API + PostgreSQL
+#   docker compose down -v           # stop and remove volumes
+#   docker compose exec api alembic revision --autogenerate -m "description"
+# ─────────────────────────────────────────────────────────────────
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wasi
+      POSTGRES_USER: wasi_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wasi_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wasi_user -d wasi"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://wasi_user:${POSTGRES_PASSWORD:-wasi_dev_password}@db:5432/wasi
+      SECRET_KEY: ${SECRET_KEY:-wasi-dev-secret-key-change-in-production}
+      DEBUG: ${DEBUG:-true}
+      CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ACLED_API_KEY: ${ACLED_API_KEY:-}
+      ACLED_EMAIL: ${ACLED_EMAIL:-}
+      COMTRADE_API_KEY: ${COMTRADE_API_KEY:-}
+      SKIP_SCRAPERS: ${SKIP_SCRAPERS:-false}
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  pgdata:

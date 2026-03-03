@@ -20,3 +20,4 @@ email-validator==2.2.0
 slowapi>=0.1.9
 limits>=3.7.0
 feedparser>=6.0.10
+alembic>=1.13.0
