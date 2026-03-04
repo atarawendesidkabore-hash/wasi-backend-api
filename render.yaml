@@ -12,7 +12,7 @@ services:
     repo: https://github.com/atarawendesidkabore-hash/wasi-backend-api
     buildCommand: pip install -r requirements.txt
     preDeployCommand: alembic upgrade head
-    startCommand: gunicorn src.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: gunicorn src.main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -36,6 +36,8 @@ services:
         sync: false  # optional: email used for ACLED registration
       - key: COMTRADE_API_KEY
         sync: false  # optional: UN Comtrade subscription key
+      - key: SKIP_SCRAPERS
+        value: "true"  # safe first deploy; trigger scrapers via /api/v2/data/ endpoints after startup
 
   - type: web
     name: wasi-frontend
