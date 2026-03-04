@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 # Re-entrance guard: prevents concurrent execution of the same scheduled task
 _composite_lock = threading.Lock()
 
+# Scheduler heartbeat: updated every time any job executes
+_last_heartbeat: datetime | None = None
+_heartbeat_lock = threading.Lock()
+
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.interval import IntervalTrigger
@@ -110,6 +114,28 @@ async def update_composite_index():
     finally:
         db.close()
         _composite_lock.release()
+
+
+def _update_heartbeat(event):
+    """APScheduler listener: record timestamp on every job execution."""
+    global _last_heartbeat
+    with _heartbeat_lock:
+        _last_heartbeat = datetime.now(timezone.utc)
+
+
+def get_scheduler_heartbeat() -> dict:
+    """Return heartbeat info for /api/health/detailed."""
+    with _heartbeat_lock:
+        hb = _last_heartbeat
+    if hb is None:
+        return {"last_heartbeat": None, "stale": False}
+    age_seconds = (datetime.now(timezone.utc) - hb).total_seconds()
+    # Stale if no job ran in 15 minutes (shortest interval is 5m for alerts)
+    return {
+        "last_heartbeat": hb.isoformat(),
+        "seconds_since_heartbeat": round(age_seconds, 1),
+        "stale": age_seconds > 900,
+    }
 
 
 def start_scheduler():
@@ -391,6 +417,10 @@ def start_scheduler():
         replace_existing=True,
         misfire_grace_time=600,
     )
+
+    # Wire heartbeat listener so health endpoint can detect stale scheduler
+    from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
+    _scheduler.add_listener(_update_heartbeat, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
     _scheduler.start()
     logger.info(

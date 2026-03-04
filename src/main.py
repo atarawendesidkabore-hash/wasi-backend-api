@@ -138,7 +138,17 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(GlobalErrorHandlerMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
-# Register all routers
+# ── API Version Registry ──────────────────────────────────────────────────────
+# /api/       — Core: auth, health, indices, composite, payments, analytics
+#               Stable. No breaking changes planned.
+# /api/v2/    — Extended: transport, bank, data, USSD, signals, markets
+#               Stable. New endpoints may be added.
+# /api/v3/    — Financial: eCFA CBDC, tokenization, forecast v1, legislative,
+#               valuation, FX, corridors, alerts, reconciliation, world news
+#               Stable. Active development.
+# /api/v4/    — Advanced: forecast v2 (adaptive ensemble, backtesting, scenarios)
+#               Experimental. May change without notice.
+# ──────────────────────────────────────────────────────────────────────────────
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(indices_router)

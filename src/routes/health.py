@@ -74,13 +74,16 @@ async def health_detailed(request: Request, db: Session = Depends(get_db)):
     # ── Scheduler status ──────────────────────────────────────────
     scheduler_info = {"enabled": False, "running": False, "jobs": 0}
     try:
-        from src.tasks.composite_update import _scheduler, _apscheduler_available
+        from src.tasks.composite_update import (
+            _scheduler, _apscheduler_available, get_scheduler_heartbeat,
+        )
         from src.config import settings as cfg
         scheduler_info["enabled"] = _apscheduler_available and cfg.SCHEDULER_ENABLED
         if _scheduler and _apscheduler_available:
             scheduler_info["running"] = _scheduler.running
             scheduler_info["jobs"] = len(_scheduler.get_jobs())
             scheduler_info["job_names"] = [j.name for j in _scheduler.get_jobs()]
+        scheduler_info["heartbeat"] = get_scheduler_heartbeat()
     except Exception:
         pass
 
@@ -104,5 +107,11 @@ async def health_detailed(request: Request, db: Session = Depends(get_db)):
         "environment": {
             "debug": os.environ.get("DEBUG", "false").lower() == "true",
             "light_startup": os.environ.get("LIGHT_STARTUP", "false").lower() == "true",
+        },
+        "api_versions": {
+            "/api/": "core - stable",
+            "/api/v2/": "extended - stable",
+            "/api/v3/": "financial - stable",
+            "/api/v4/": "advanced - experimental",
         },
     }
