@@ -626,6 +626,8 @@ class USSDMenuEngine:
                 price = float(parts[1])
             except ValueError:
                 return "END Prix invalide. Réessayez.", "ERROR"
+            if price <= 0 or price > 10_000_000:
+                return "END Prix hors limites (1 - 10,000,000).", "ERROR"
             _, name = COMMODITY_CODES.get(code_key, ("?", "?"))
             currency = COUNTRY_CURRENCY.get(country_code, "XOF")
             return (
@@ -694,6 +696,8 @@ class USSDMenuEngine:
             ), "TRADE_DECLARATION"
 
         if len(parts) == 3:
+            if parts[2] not in ("1", "2", "3"):
+                return "END Direction invalide. Choisissez 1, 2 ou 3.", "ERROR"
             currency = COUNTRY_CURRENCY.get(country_code, "XOF")
             return (
                 f"CON Valeur totale en {currency}\n"
@@ -705,6 +709,8 @@ class USSDMenuEngine:
                 value = float(parts[3])
             except ValueError:
                 return "END Valeur invalide.", "ERROR"
+            if value <= 0 or value > 10_000_000_000:
+                return "END Valeur hors limites.", "ERROR"
             post_key = parts[0]
             goods_key = parts[1]
             dir_key = parts[2]
@@ -791,6 +797,8 @@ class USSDMenuEngine:
                 delay = float(parts[2])
             except ValueError:
                 return "END Délai invalide.", "ERROR"
+            if delay < 0 or delay > 720:
+                return "END Délai hors limites (0-720 heures).", "ERROR"
             port_key = parts[0]
             congestion_map = {"1": "LOW", "2": "MEDIUM", "3": "HIGH", "4": "CRITICAL"}
             congestion = congestion_map.get(parts[1], "MEDIUM")
@@ -1297,7 +1305,7 @@ class USSDMenuEngine:
         return country.id if country else None
 
     def _log_session(self, **kwargs) -> None:
-        """Persist USSD session record."""
+        """Persist USSD session record — upsert for multi-step sessions."""
         provider = (
             self.db.query(USSDProvider)
             .filter(USSDProvider.provider_code == kwargs["provider_code"])
@@ -1309,21 +1317,37 @@ class USSDMenuEngine:
         if provider_id is None:
             return
 
-        session = USSDSession(
-            session_id=kwargs["session_id"],
-            provider_id=provider_id,
-            phone_hash=kwargs["phone_hash"],
-            country_code=kwargs["country_code"],
-            service_code=kwargs["service_code"],
-            session_type=kwargs["session_type"],
-            menu_level=kwargs["menu_level"],
-            user_input=kwargs["user_input"],
-            response_text=kwargs["response_text"][:500],
-            status=kwargs["status"],
-            started_at=datetime.now(timezone.utc),
-            ended_at=datetime.now(timezone.utc) if kwargs["status"] == "completed" else None,
+        existing = (
+            self.db.query(USSDSession)
+            .filter(USSDSession.session_id == kwargs["session_id"])
+            .first()
         )
-        self.db.add(session)
+
+        if existing:
+            existing.session_type = kwargs["session_type"]
+            existing.menu_level = kwargs["menu_level"]
+            existing.user_input = kwargs["user_input"]
+            existing.response_text = kwargs["response_text"][:500]
+            existing.status = kwargs["status"]
+            if kwargs["status"] == "completed":
+                existing.ended_at = datetime.now(timezone.utc)
+        else:
+            session = USSDSession(
+                session_id=kwargs["session_id"],
+                provider_id=provider_id,
+                phone_hash=kwargs["phone_hash"],
+                country_code=kwargs["country_code"],
+                service_code=kwargs["service_code"],
+                session_type=kwargs["session_type"],
+                menu_level=kwargs["menu_level"],
+                user_input=kwargs["user_input"],
+                response_text=kwargs["response_text"][:500],
+                status=kwargs["status"],
+                started_at=datetime.now(timezone.utc),
+                ended_at=datetime.now(timezone.utc) if kwargs["status"] == "completed" else None,
+            )
+            self.db.add(session)
+
         self.db.commit()
 
     def _save_commodity_report(
@@ -1485,7 +1509,7 @@ class USSDDataAggregator:
       - port_efficiency_score: Clearance speed (0–100)
       - ussd_composite_score: Weighted average (0–100)
 
-    Weights: money=30%, commodity=20%, trade=25%, port=25%
+    Weights: money=25%, commodity=15%, trade=20%, port=20%, route=20%
     """
 
     WEIGHTS = {

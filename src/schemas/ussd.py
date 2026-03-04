@@ -44,6 +44,11 @@ class USSDProviderResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class USSDProviderCreateResponse(USSDProviderResponse):
+    """Extended response for provider registration — includes API key shown once."""
+    api_key: str = Field(..., description="Plaintext API key — shown only at creation time")
+
+
 # ── Mobile Money Flow ─────────────────────────────────────────────────
 
 class MobileMoneyFlowCreate(BaseModel):

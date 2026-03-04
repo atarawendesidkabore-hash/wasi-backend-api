@@ -265,7 +265,9 @@ def test_get_payments():
         headers=_auth_header(token),
     )
     assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    data = resp.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
 
 
 # ── 10. Aggregation ──────────────────────────────────────────────────
@@ -486,3 +488,246 @@ def test_ussd_option9_checkin_menu():
         assert stype == "WORKER_CHECKIN"
     finally:
         db.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# NEW TESTS — Phase 7 additions
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── 13. New POST endpoints ────────────────────────────────────────────
+
+def test_submit_citizen_activity():
+    """POST /activities/submit creates a citizen token."""
+    token = _register_and_login("citizen1", "c1@test.com")
+    _topup(token)
+    resp = client.post(
+        "/api/v3/tokenization/activities/submit",
+        json={
+            "country_code": "BF",
+            "activity_type": "FARM_WORK",
+            "location_name": "Ouagadougou",
+            "location_region": "Centre",
+            "quantity_value": 50.0,
+            "quantity_unit": "kg",
+        },
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 200, f"Submit failed: {resp.text}"
+    data = resp.json()
+    assert data.get("status") in ("created", "updated")
+
+
+def test_submit_citizen_activity_invalid_type():
+    """Invalid activity_type rejected by Literal validation."""
+    token = _register_and_login("citizen2", "c2@test.com")
+    _topup(token)
+    resp = client.post(
+        "/api/v3/tokenization/activities/submit",
+        json={
+            "country_code": "BF",
+            "activity_type": "INVALID_TYPE",
+            "location_name": "Ouagadougou",
+        },
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 422, f"Should reject invalid type, got {resp.status_code}"
+
+
+def test_submit_worker_checkin_not_registered():
+    """Worker check-in fails for unregistered worker."""
+    token = _register_and_login("worker1", "w1@test.com")
+    _topup(token)
+    resp = client.post(
+        "/api/v3/tokenization/workers/checkin",
+        json={
+            "contract_id": "nonexistent-contract",
+            "location_name": "Ouagadougou",
+        },
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 400, f"Should reject unregistered worker, got {resp.status_code}"
+
+
+# ── 14. Milestone verification flow (Bug #8 fix) ─────────────────────
+
+def test_milestone_confidence_no_double_count():
+    """Verify confidence is not double-counted (Bug #8 fix)."""
+    from tests.conftest import TestingSessionLocal
+    from src.engines.tokenization_engine import TokenizationEngine
+    from src.database.tokenization_models import ContractMilestone
+    from src.database.models import Country
+
+    db = TestingSessionLocal()
+    try:
+        bf = db.query(Country).filter(Country.code == "BF").first()
+        assert bf is not None
+
+        ms = ContractMilestone(
+            country_id=bf.id,
+            contract_id="test-dblcount-001",
+            contract_name="Double Count Test",
+            contractor_phone_hash="x" * 64,
+            milestone_number=1,
+            description="Test milestone",
+            value_cfa=1_000_000,
+            status="submitted",
+            verification_required=3,
+        )
+        db.add(ms)
+        db.commit()
+        db.refresh(ms)
+
+        engine = TokenizationEngine(db)
+
+        # First: CITIZEN APPROVE (weight 1.0)
+        r1 = engine.submit_milestone_verification(
+            milestone_id=ms.id,
+            verifier_phone_hash="v1" + "a" * 62,
+            verifier_type="CITIZEN",
+            vote="APPROVE",
+        )
+        assert r1["confidence"] == 1.0, f"First APPROVE should give 1.0, got {r1['confidence']}"
+
+        # Second: CITIZEN REJECT (weight 1.0)
+        r2 = engine.submit_milestone_verification(
+            milestone_id=ms.id,
+            verifier_phone_hash="v2" + "a" * 62,
+            verifier_type="CITIZEN",
+            vote="REJECT",
+        )
+        # Correct: approve=1.0, total=2.0 → 0.5
+        # Bug would give: approve=1.0+1.0, total=2.0+1.0 → 0.667
+        assert r2["confidence"] == 0.5, f"APPROVE+REJECT should give 0.5, got {r2['confidence']}"
+
+    finally:
+        db.close()
+
+
+def test_full_milestone_verification_flow():
+    """Create contract → add 3 CITIZEN APPROVEs → auto-verify."""
+    from tests.conftest import TestingSessionLocal
+    from src.engines.tokenization_engine import TokenizationEngine
+    from src.database.tokenization_models import ContractMilestone
+    from src.database.models import Country
+
+    db = TestingSessionLocal()
+    try:
+        bf = db.query(Country).filter(Country.code == "BF").first()
+        ms = ContractMilestone(
+            country_id=bf.id,
+            contract_id="test-autoverify-001",
+            contract_name="Auto Verify Test",
+            contractor_phone_hash="y" * 64,
+            milestone_number=1,
+            description="Auto verify milestone",
+            value_cfa=500_000,
+            status="submitted",
+            verification_required=3,
+        )
+        db.add(ms)
+        db.commit()
+        db.refresh(ms)
+
+        engine = TokenizationEngine(db)
+
+        for i in range(3):
+            r = engine.submit_milestone_verification(
+                milestone_id=ms.id,
+                verifier_phone_hash=f"av{i}" + "b" * 61,
+                verifier_type="CITIZEN",
+                vote="APPROVE",
+            )
+
+        db.refresh(ms)
+        assert ms.status == "verified", f"Expected verified, got {ms.status}"
+        assert ms.confidence >= 0.60
+
+    finally:
+        db.close()
+
+
+# ── 15. Filter and pagination tests ──────────────────────────────────
+
+def test_tokens_pagination():
+    token = _register_and_login("paguser1", "pag1@test.com")
+    _topup(token)
+    resp = client.get(
+        "/api/v3/tokenization/tokens/NG?page=1&page_size=5",
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "items" in data
+    assert "total" in data
+
+
+def test_activities_filter_by_type():
+    token = _register_and_login("filtuser1", "filt1@test.com")
+    _topup(token)
+    resp = client.get(
+        "/api/v3/tokenization/activities/BF?activity_type=FARM_WORK",
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 200
+
+
+def test_activities_filter_by_quarter():
+    token = _register_and_login("filtuser2", "filt2@test.com")
+    _topup(token)
+    resp = client.get(
+        "/api/v3/tokenization/activities/BF?quarter=Q1-2026",
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 200
+
+
+def test_contracts_filter_by_status():
+    token = _register_and_login("filtuser3", "filt3@test.com")
+    _topup(token)
+    resp = client.get(
+        "/api/v3/tokenization/contracts/BF?status=pending",
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 200
+
+
+def test_payments_filter_by_type():
+    token = _register_and_login("filtuser4", "filt4@test.com")
+    _topup(token)
+    resp = client.get(
+        "/api/v3/tokenization/payments/BF?payment_type=CITIZEN_UBDI",
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 200
+
+
+# ── 16. Milestone verification schema validation ─────────────────────
+
+def test_verify_milestone_invalid_vote():
+    """Invalid vote value rejected by Literal validation."""
+    token = _register_and_login("verifier1", "ver1@test.com")
+    _topup(token)
+    resp = client.post(
+        "/api/v3/tokenization/contracts/99999/verify",
+        json={
+            "verifier_type": "CITIZEN",
+            "vote": "INVALID_VOTE",
+        },
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 422
+
+
+def test_verify_milestone_invalid_verifier_type():
+    """Invalid verifier_type rejected by Literal validation."""
+    token = _register_and_login("verifier2", "ver2@test.com")
+    _topup(token)
+    resp = client.post(
+        "/api/v3/tokenization/contracts/99999/verify",
+        json={
+            "verifier_type": "INVALID_TYPE",
+            "vote": "APPROVE",
+        },
+        headers=_auth_header(token),
+    )
+    assert resp.status_code == 422

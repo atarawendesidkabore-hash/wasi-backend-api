@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional, Dict, List
+from typing import Literal, Optional, Dict, List
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -10,11 +10,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class CitizenActivityRequest(BaseModel):
     country_code: str = Field(..., min_length=2, max_length=2)
-    activity_type: str = Field(
-        ...,
-        description="FARM_WORK | MARKET_PRICE | CROP_YIELD | ROAD_CONDITION | "
-                    "WEATHER | WATER_ACCESS | HEALTH_FACILITY | SCHOOL_STATUS",
-    )
+    activity_type: Literal[
+        "FARM_WORK", "MARKET_PRICE", "CROP_YIELD", "ROAD_CONDITION",
+        "WEATHER", "WATER_ACCESS", "HEALTH_FACILITY", "SCHOOL_STATUS",
+    ] = Field(..., description="Type of citizen activity report")
     location_name: str = Field(..., min_length=2, max_length=200)
     location_region: Optional[str] = None
     quantity_value: Optional[float] = None
@@ -25,26 +24,26 @@ class CitizenActivityRequest(BaseModel):
 
 class BusinessSubmissionRequest(BaseModel):
     country_code: str = Field(..., min_length=2, max_length=2)
-    business_type: str = Field(
-        ...,
-        description="AGRICULTURE | TRADING | TRANSPORT | MANUFACTURING | "
-                    "SERVICES | MINING | RETAIL",
-    )
-    metric_type: str = Field(
-        ...,
-        description="CUSTOMS_DECLARATION | BANK_STATEMENT | SALES_VOLUME | "
-                    "INVENTORY_LEVEL | SUPPLIER_COUNT | TRADE_VOLUME | "
-                    "EMPLOYEE_COUNT | ACTIVITY_REPORT",
-    )
+    business_type: Literal[
+        "AGRICULTURE", "TRADING", "TRANSPORT", "MANUFACTURING",
+        "SERVICES", "MINING", "RETAIL",
+    ] = Field(..., description="Business sector classification")
+    metric_type: Literal[
+        "CUSTOMS_DECLARATION", "BANK_STATEMENT", "SALES_VOLUME",
+        "INVENTORY_LEVEL", "SUPPLIER_COUNT", "TRADE_VOLUME",
+        "EMPLOYEE_COUNT", "ACTIVITY_REPORT",
+    ] = Field(..., description="Type of business metric submitted")
     metrics: str = Field(..., description="JSON string of business metrics")
     period_date: date
 
 
 class MilestoneVerificationRequest(BaseModel):
-    verifier_type: str = Field(
-        ..., description="CITIZEN | INSPECTOR | CONTRACTOR"
+    verifier_type: Literal["CITIZEN", "INSPECTOR", "CONTRACTOR"] = Field(
+        ..., description="Role of the verifier"
     )
-    vote: str = Field(..., description="APPROVE | REJECT | PARTIAL")
+    vote: Literal["APPROVE", "REJECT", "PARTIAL"] = Field(
+        ..., description="Verification vote"
+    )
     completion_pct: Optional[float] = Field(None, ge=0, le=100)
     evidence: Optional[str] = None
     location_lat: Optional[float] = None

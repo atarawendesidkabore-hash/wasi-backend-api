@@ -103,6 +103,7 @@ def run_ussd_aggregation(db=None) -> dict:
 
     except Exception as exc:
         logger.error("USSD aggregation failed: %s", exc)
+        db.rollback()
         return {
             "status": "error",
             "error": str(exc),

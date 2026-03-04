@@ -16,6 +16,7 @@ import hmac
 import json
 import logging
 import random
+import threading
 import uuid
 from datetime import timezone, date, datetime, timedelta
 
@@ -31,6 +32,7 @@ from src.config import settings
 from src.engines.tokenization_engine import PaymentDisbursementEngine
 
 logger = logging.getLogger(__name__)
+_tokenization_lock = threading.Lock()
 
 # 16 ECOWAS countries with expected daily activity volumes
 COUNTRY_ACTIVITY_SCALE = {
@@ -43,11 +45,15 @@ COUNTRY_ACTIVITY_SCALE = {
 }
 
 
-def run_tokenization_aggregation(db=None) -> dict:
+def run_tokenization_aggregation(db=None, target_date: date = None) -> dict:
     """
     Compute daily TokenizationDailyAggregate for all 16 ECOWAS countries.
-    Discovers all dates with data and aggregates each.
+    If target_date is provided, only aggregates that date; otherwise discovers all dates.
     """
+    if not _tokenization_lock.acquire(blocking=False):
+        logger.warning("tokenization_aggregation: previous run still in progress, skipping")
+        return {"skipped": True}
+
     from sqlalchemy import func, distinct, union_all, select
 
     own_session = db is None
@@ -55,16 +61,19 @@ def run_tokenization_aggregation(db=None) -> dict:
         db = SessionLocal()
 
     try:
-        # Discover all dates with tokenization data
-        date_queries = [
-            select(DailyActivityDeclaration.period_date.label("d")),
-            select(BusinessDataSubmission.period_date.label("d")),
-            select(WorkerCheckIn.check_in_date.label("d")),
-        ]
-        combined = union_all(*date_queries).subquery()
-        all_dates = sorted(
-            set(r[0] for r in db.query(combined.c.d).distinct().all() if r[0])
-        )
+        if target_date:
+            all_dates = [target_date]
+        else:
+            # Discover all dates with tokenization data
+            date_queries = [
+                select(DailyActivityDeclaration.period_date.label("d")),
+                select(BusinessDataSubmission.period_date.label("d")),
+                select(WorkerCheckIn.check_in_date.label("d")),
+            ]
+            combined = union_all(*date_queries).subquery()
+            all_dates = sorted(
+                set(r[0] for r in db.query(combined.c.d).distinct().all() if r[0])
+            )
 
         if not all_dates:
             return {
@@ -78,7 +87,10 @@ def run_tokenization_aggregation(db=None) -> dict:
 
         total_processed = 0
 
-        for target_date in all_dates:
+        for agg_date in all_dates:
+            # End-of-day boundary for date-aware Pillar 3 filtering
+            agg_date_end = datetime.combine(agg_date, datetime.max.time())
+
             for country in countries:
                 cid = country.id
 
@@ -87,7 +99,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     db.query(func.count(DailyActivityDeclaration.id))
                     .filter(
                         DailyActivityDeclaration.country_id == cid,
-                        DailyActivityDeclaration.period_date == target_date,
+                        DailyActivityDeclaration.period_date == agg_date,
                     )
                     .scalar()
                 ) or 0
@@ -96,7 +108,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     db.query(func.count(distinct(DailyActivityDeclaration.phone_hash)))
                     .filter(
                         DailyActivityDeclaration.country_id == cid,
-                        DailyActivityDeclaration.period_date == target_date,
+                        DailyActivityDeclaration.period_date == agg_date,
                     )
                     .scalar()
                 ) or 0
@@ -105,7 +117,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     db.query(func.coalesce(func.sum(DailyActivityDeclaration.payment_amount_cfa), 0.0))
                     .filter(
                         DailyActivityDeclaration.country_id == cid,
-                        DailyActivityDeclaration.period_date == target_date,
+                        DailyActivityDeclaration.period_date == agg_date,
                     )
                     .scalar()
                 ) or 0.0
@@ -115,7 +127,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     db.query(func.count(BusinessDataSubmission.id))
                     .filter(
                         BusinessDataSubmission.country_id == cid,
-                        BusinessDataSubmission.period_date == target_date,
+                        BusinessDataSubmission.period_date == agg_date,
                     )
                     .scalar()
                 ) or 0
@@ -124,17 +136,18 @@ def run_tokenization_aggregation(db=None) -> dict:
                     db.query(func.coalesce(func.sum(BusinessDataSubmission.tax_credit_earned_cfa), 0.0))
                     .filter(
                         BusinessDataSubmission.country_id == cid,
-                        BusinessDataSubmission.period_date == target_date,
+                        BusinessDataSubmission.period_date == agg_date,
                     )
                     .scalar()
                 ) or 0.0
 
-                # Pillar 3: Contracts & workers
+                # Pillar 3: Contracts & workers (date-aware)
                 contracts_active = (
                     db.query(func.count(distinct(ContractMilestone.contract_id)))
                     .filter(
                         ContractMilestone.country_id == cid,
                         ContractMilestone.status.in_(["pending", "in_progress", "submitted"]),
+                        ContractMilestone.created_at <= agg_date_end,
                     )
                     .scalar()
                 ) or 0
@@ -144,6 +157,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     .filter(
                         ContractMilestone.country_id == cid,
                         ContractMilestone.status.in_(["verified", "paid"]),
+                        ContractMilestone.updated_at <= agg_date_end,
                     )
                     .scalar()
                 ) or 0
@@ -151,7 +165,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                 workers_in = (
                     db.query(func.count(WorkerCheckIn.id))
                     .filter(
-                        WorkerCheckIn.check_in_date == target_date,
+                        WorkerCheckIn.check_in_date == agg_date,
                         WorkerCheckIn.worker_id.in_(
                             db.query(FasoMeaboWorker.id).filter(FasoMeaboWorker.country_id == cid)
                         ),
@@ -182,7 +196,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     db.query(func.count(DailyActivityDeclaration.id))
                     .filter(
                         DailyActivityDeclaration.country_id == cid,
-                        DailyActivityDeclaration.period_date == target_date,
+                        DailyActivityDeclaration.period_date == agg_date,
                         DailyActivityDeclaration.is_cross_validated.is_(True),
                     )
                     .scalar()
@@ -196,7 +210,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                     db.query(TokenizationDailyAggregate)
                     .filter(
                         TokenizationDailyAggregate.country_id == cid,
-                        TokenizationDailyAggregate.period_date == target_date,
+                        TokenizationDailyAggregate.period_date == agg_date,
                     )
                     .first()
                 )
@@ -221,7 +235,7 @@ def run_tokenization_aggregation(db=None) -> dict:
                 else:
                     agg = TokenizationDailyAggregate(
                         country_id=cid,
-                        period_date=target_date,
+                        period_date=agg_date,
                         citizen_reports_count=citizen_count,
                         citizen_unique_reporters=unique_reporters,
                         citizen_total_paid_cfa=citizen_paid,
@@ -263,6 +277,7 @@ def run_tokenization_aggregation(db=None) -> dict:
     finally:
         if own_session:
             db.close()
+        _tokenization_lock.release()
 
 
 def run_payment_disbursement(db=None) -> dict:
@@ -360,8 +375,11 @@ def seed_tokenization_demo_data(db=None) -> int:
         db = SessionLocal()
 
     try:
-        # Check if data exists
-        existing = db.query(DailyActivityDeclaration).count()
+        # Check if data exists in any tokenization table
+        existing = (
+            db.query(DailyActivityDeclaration).count()
+            + db.query(DataToken).filter(DataToken.pillar == "CITIZEN_DATA").count()
+        )
         if existing > 0:
             logger.info("Tokenization demo data exists (%d records) — skipping", existing)
             return 0
@@ -666,7 +684,12 @@ def seed_tokenization_demo_data(db=None) -> int:
         count += pay_count
         logger.info("Seeded %d payment records", pay_count)
 
-        db.commit()
+        try:
+            db.commit()
+        except Exception as commit_exc:
+            logger.warning("Demo seed commit failed (partial data?): %s — rolling back", commit_exc)
+            db.rollback()
+            return 0
         logger.info("Total tokenization demo records seeded: %d", count)
         return count
 

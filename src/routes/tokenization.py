@@ -191,6 +191,42 @@ async def get_activities(
     return paginate(q.order_by(DailyActivityDeclaration.period_date.desc()), pagination)
 
 
+@router.post("/activities/submit")
+@limiter.limit("10/minute")
+async def submit_citizen_activity(
+    request: Request,
+    req: CitizenActivityRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Submit citizen activity declaration via REST API. Costs 1 credit."""
+    deduct_credits(current_user, db, "/api/v3/tokenization/activities/submit", cost_multiplier=1.0)
+    country = _get_country(db, req.country_code)
+
+    phone_hash = hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        current_user.username.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    engine = TokenizationEngine(db)
+    result = engine.create_citizen_token(
+        country_code=country.code,
+        phone_hash=phone_hash,
+        activity_type=req.activity_type,
+        location_name=req.location_name,
+        location_region=req.location_region,
+        quantity_value=req.quantity_value,
+        quantity_unit=req.quantity_unit,
+        price_local=req.price_local,
+        details=req.details,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 # ── 4. Business submission ────────────────────────────────────────────
 
 @router.post("/business/submit")
@@ -375,6 +411,38 @@ async def get_workers(
     return paginate(q.order_by(FasoMeaboWorker.total_days_worked.desc()), pagination)
 
 
+@router.post("/workers/checkin")
+@limiter.limit("10/minute")
+async def submit_worker_checkin(
+    request: Request,
+    req: WorkerCheckInRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Submit Faso Meabo worker check-in via REST API. Costs 1 credit."""
+    deduct_credits(current_user, db, "/api/v3/tokenization/workers/checkin", cost_multiplier=1.0)
+
+    phone_hash = hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        current_user.username.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    engine = TokenizationEngine(db)
+    result = engine.create_worker_checkin(
+        worker_phone_hash=phone_hash,
+        contract_id=req.contract_id,
+        country_code="",
+        location_name=req.location_name,
+        location_lat=req.location_lat,
+        location_lon=req.location_lon,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 # ── 9. Disbursement history ──────────────────────────────────────────
 
 @router.get("/payments/{country_code}")
@@ -423,5 +491,5 @@ async def calculate_aggregation(
     )
 
     from src.tasks.tokenization_aggregation import run_tokenization_aggregation
-    result = run_tokenization_aggregation(db)
+    result = run_tokenization_aggregation(db, target_date=period_date)
     return result

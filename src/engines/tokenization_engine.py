@@ -453,14 +453,17 @@ class TokenizationEngine:
         milestone.verification_count = (milestone.verification_count or 0) + 1
 
         # Compute weighted confidence from all verifications
-        all_verifs = (
-            self.db.query(MilestoneVerification)
-            .filter(MilestoneVerification.milestone_id == milestone_id)
-            .all()
-        )
-        total_weight = sum(v.credibility_weight for v in all_verifs) + weight
+        # Use no_autoflush to prevent the just-added verification from
+        # appearing in results (avoids double-counting its weight)
+        with self.db.no_autoflush:
+            existing_verifs = (
+                self.db.query(MilestoneVerification)
+                .filter(MilestoneVerification.milestone_id == milestone_id)
+                .all()
+            )
+        total_weight = sum(v.credibility_weight for v in existing_verifs) + weight
         approve_weight = sum(
-            v.credibility_weight for v in all_verifs if v.vote == "APPROVE"
+            v.credibility_weight for v in existing_verifs if v.vote == "APPROVE"
         )
         if vote == "APPROVE":
             approve_weight += weight

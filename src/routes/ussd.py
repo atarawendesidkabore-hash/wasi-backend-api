@@ -39,7 +39,7 @@ from src.database.ussd_models import (
 )
 from src.schemas.ussd import (
     USSDCallbackRequest, USSDCallbackResponse,
-    USSDProviderCreate, USSDProviderResponse,
+    USSDProviderCreate, USSDProviderResponse, USSDProviderCreateResponse,
     MobileMoneyFlowCreate, MobileMoneyFlowResponse,
     CommodityReportResponse, TradeDeclarationResponse,
     PortClearanceResponse, USSDDailyAggregateResponse,
@@ -536,7 +536,7 @@ async def get_mobile_money_flows(
 
 # ── Provider management ───────────────────────────────────────────────
 
-@router.post("/providers", response_model=USSDProviderResponse)
+@router.post("/providers", response_model=USSDProviderCreateResponse)
 async def register_provider(
     payload: USSDProviderCreate,
     db: Session = Depends(get_db),
@@ -572,10 +572,11 @@ async def register_provider(
 
     logger.info("Registered USSD provider: %s (%s)", payload.provider_code, payload.provider_name)
 
-    # Return the API key ONCE (it's hashed in DB)
+    # Return the API key ONCE (it's hashed in DB — cannot be retrieved later)
+    logger.info("Created API key for provider %s (key_prefix=%s...)", payload.provider_code, api_key[:8])
     return {
         **USSDProviderResponse.model_validate(provider).model_dump(),
-        "api_key": api_key,  # Only shown at creation time
+        "api_key": api_key,
     }
 
 
@@ -590,6 +591,55 @@ async def list_providers(
 
 
 # ── Route report endpoints ───────────────────────────────────────────
+# NOTE: corridor route MUST be registered before {country_code} to avoid
+# FastAPI matching "corridor" as a country code (first-match routing).
+
+@router.get("/routes/corridor/{corridor_code}")
+async def get_corridor_reports(
+    corridor_code: str,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all route reports for a specific corridor across countries. Costs 2 credits."""
+    deduct_credits(current_user, db, f"/api/v2/ussd/routes/corridor/{corridor_code}", cost_multiplier=2.0)
+
+    cutoff = date.today() - timedelta(days=days)
+    rows = (
+        db.query(USSDRouteReport, Country)
+        .join(Country, Country.id == USSDRouteReport.country_id)
+        .filter(
+            USSDRouteReport.corridor_code == corridor_code.upper(),
+            USSDRouteReport.period_date >= cutoff,
+        )
+        .order_by(USSDRouteReport.period_date.desc())
+        .all()
+    )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No reports for corridor '{corridor_code}'")
+
+    return {
+        "corridor_code": corridor_code.upper(),
+        "corridor_name": rows[0][0].corridor_name if rows else corridor_code,
+        "reports": [
+            {
+                "period_date": str(r.period_date),
+                "country_code": c.code,
+                "report_type": r.report_type,
+                "road_surface": r.road_surface,
+                "condition_score": r.condition_score,
+                "wait_hours": r.wait_hours,
+                "fuel_type": r.fuel_type,
+                "fuel_price_local": r.fuel_price_local,
+                "transit_hours": r.transit_hours,
+                "reporter_count": r.reporter_count,
+                "confidence": r.confidence,
+            }
+            for r, c in rows
+        ],
+    }
+
 
 @router.get("/routes/{country_code}")
 async def get_route_reports(
@@ -639,53 +689,6 @@ async def get_route_reports(
                 "confidence": r.confidence,
             }
             for r in rows
-        ],
-    }
-
-
-@router.get("/routes/corridor/{corridor_code}")
-async def get_corridor_reports(
-    corridor_code: str,
-    days: int = Query(default=30, ge=1, le=365),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Get all route reports for a specific corridor across countries. Costs 2 credits."""
-    deduct_credits(current_user, db, f"/api/v2/ussd/routes/corridor/{corridor_code}", cost_multiplier=2.0)
-
-    cutoff = date.today() - timedelta(days=days)
-    rows = (
-        db.query(USSDRouteReport, Country)
-        .join(Country, Country.id == USSDRouteReport.country_id)
-        .filter(
-            USSDRouteReport.corridor_code == corridor_code.upper(),
-            USSDRouteReport.period_date >= cutoff,
-        )
-        .order_by(USSDRouteReport.period_date.desc())
-        .all()
-    )
-
-    if not rows:
-        raise HTTPException(status_code=404, detail=f"No reports for corridor '{corridor_code}'")
-
-    return {
-        "corridor_code": corridor_code.upper(),
-        "corridor_name": rows[0][0].corridor_name if rows else corridor_code,
-        "reports": [
-            {
-                "period_date": str(r.period_date),
-                "country_code": c.code,
-                "report_type": r.report_type,
-                "road_surface": r.road_surface,
-                "condition_score": r.condition_score,
-                "wait_hours": r.wait_hours,
-                "fuel_type": r.fuel_type,
-                "fuel_price_local": r.fuel_price_local,
-                "transit_hours": r.transit_hours,
-                "reporter_count": r.reporter_count,
-                "confidence": r.confidence,
-            }
-            for r, c in rows
         ],
     }
 
