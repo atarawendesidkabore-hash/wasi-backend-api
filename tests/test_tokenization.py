@@ -407,6 +407,17 @@ def test_payment_pricing():
 
 # ── 12. USSD Menu Tests ──────────────────────────────────────────────
 
+def _seed_consent_for_phone(db, phone_number: str):
+    """Pre-create a consent record so the USSD engine skips the consent gate."""
+    from src.database.ussd_models import USSDConsent
+    from src.engines.ussd_engine import _hash_phone
+    ph = _hash_phone(phone_number)
+    existing = db.query(USSDConsent).filter(USSDConsent.phone_hash == ph).first()
+    if not existing:
+        db.add(USSDConsent(phone_hash=ph, consented=True))
+        db.commit()
+
+
 def test_ussd_main_menu_shows_tokenization():
     """USSD main menu should show options 7, 8, 9."""
     from tests.conftest import TestingSessionLocal
@@ -414,6 +425,7 @@ def test_ussd_main_menu_shows_tokenization():
 
     db = TestingSessionLocal()
     try:
+        _seed_consent_for_phone(db, "+22607000001")
         engine = USSDMenuEngine(db)
         response, stype = engine.process_callback(
             session_id="test-sess-001",
@@ -435,6 +447,7 @@ def test_ussd_option7_activity_menu():
 
     db = TestingSessionLocal()
     try:
+        _seed_consent_for_phone(db, "+22607000002")
         engine = USSDMenuEngine(db)
         response, stype = engine.process_callback(
             session_id="test-sess-002",
@@ -456,6 +469,7 @@ def test_ussd_option8_business_menu():
 
     db = TestingSessionLocal()
     try:
+        _seed_consent_for_phone(db, "+22607000003")
         engine = USSDMenuEngine(db)
         response, stype = engine.process_callback(
             session_id="test-sess-003",
@@ -476,6 +490,7 @@ def test_ussd_option9_checkin_menu():
 
     db = TestingSessionLocal()
     try:
+        _seed_consent_for_phone(db, "+22607000004")
         engine = USSDMenuEngine(db)
         response, stype = engine.process_callback(
             session_id="test-sess-004",

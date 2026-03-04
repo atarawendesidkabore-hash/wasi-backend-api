@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 
 from src.main import app
 from src.database.models import User
+from src.database.ussd_models import USSDConsent
+from src.engines.ussd_engine import _hash_phone
 from tests.conftest import TestingSessionLocal
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -55,6 +57,17 @@ def _auth_header(token: str) -> dict:
 
 def _topup(token: str, amount: float = 500.0):
     client.post("/api/payment/topup", json={"amount": amount}, headers=_auth_header(token))
+
+
+def _seed_consent(phone_number: str):
+    """Pre-create a consent record so the USSD engine skips the consent gate."""
+    db = TestingSessionLocal()
+    ph = _hash_phone(phone_number)
+    existing = db.query(USSDConsent).filter(USSDConsent.phone_hash == ph).first()
+    if not existing:
+        db.add(USSDConsent(phone_hash=ph, consented=True))
+        db.commit()
+    db.close()
 
 
 def _register_admin():
@@ -187,6 +200,7 @@ def test_callback_commodity_flow():
     """Full option 1 flow: select commodity → enter price → confirm."""
     headers = _setup_callback()
     phone = "+22607200001"
+    _seed_consent(phone)
     sid = "commodity-flow-001"
 
     # Step 1: select option 1 (commodity)
@@ -312,6 +326,7 @@ def test_callback_option7_full_flow():
 def test_callback_ecfa_option6_menu():
     """Option 6 shows eCFA wallet menu."""
     headers = _setup_callback()
+    _seed_consent("+22607400001")
     resp = client.post("/api/v2/ussd/callback", json={
         "sessionId": "ecfa-001",
         "serviceCode": "*384*WASI#",

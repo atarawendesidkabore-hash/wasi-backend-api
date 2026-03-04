@@ -313,6 +313,28 @@ class USSDDailyAggregate(Base):
     __table_args__ = (UniqueConstraint("country_id", "period_date"),)
 
 
+class USSDConsent(Base):
+    """
+    Records user consent for USSD data collection.
+
+    ECOWAS data-protection regulations (and GDPR for EU-linked data)
+    require explicit opt-in before collecting location, commodity, trade,
+    or financial data through USSD channels.
+
+    On first dial, the user sees a consent screen. Acceptance is recorded
+    once; users may withdraw consent at any time via the account menu.
+    """
+    __tablename__ = "ussd_consents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    phone_hash = Column(String(64), unique=True, nullable=False, index=True)
+    consented = Column(Boolean, default=True, nullable=False)
+    consented_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    withdrawn_at = Column(DateTime, nullable=True)
+    service_code = Column(String(20), nullable=True)
+    consent_lang = Column(String(5), nullable=True)
+
+
 class USSDRouteReport(Base):
     """
     Crowdsourced road corridor reports from truckers, traders, and travelers.

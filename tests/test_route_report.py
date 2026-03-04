@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 
 from src.main import app
 from src.database.models import Country, RoadCorridor
-from src.database.ussd_models import USSDRouteReport, USSDDailyAggregate
+from src.database.ussd_models import USSDRouteReport, USSDDailyAggregate, USSDConsent
 from src.engines.ussd_engine import (
-    USSDMenuEngine, USSDDataAggregator,
+    USSDMenuEngine, USSDDataAggregator, _hash_phone,
     CORRIDORS, REPORT_TYPES, ROAD_SURFACES, FUEL_TYPES, REPORTER_TYPES,
 )
 from tests.conftest import TestingSessionLocal
@@ -36,6 +36,15 @@ def _register_and_login(username="route_user", email="route@test.com", password=
 
 def _auth_header(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+def _seed_consent(db, phone_number: str):
+    """Pre-create a consent record so the USSD engine skips the consent gate."""
+    ph = _hash_phone(phone_number)
+    existing = db.query(USSDConsent).filter(USSDConsent.phone_hash == ph).first()
+    if not existing:
+        db.add(USSDConsent(phone_hash=ph, consented=True))
+        db.commit()
 
 
 def _seed_route_reports(db, country_code="CI", days=3):
@@ -101,6 +110,7 @@ class TestUSSDRouteReportFlow:
     def test_main_menu_shows_option_0(self):
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000001")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_menu_001",
@@ -116,6 +126,7 @@ class TestUSSDRouteReportFlow:
     def test_step0_corridor_list(self):
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000002")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_001",
@@ -132,6 +143,7 @@ class TestUSSDRouteReportFlow:
     def test_step1_report_type(self):
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000003")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_002",
@@ -148,6 +160,7 @@ class TestUSSDRouteReportFlow:
     def test_step2_reporter_type(self):
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000004")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_003",
@@ -163,6 +176,7 @@ class TestUSSDRouteReportFlow:
     def test_step3_road_surface(self):
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000005")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_004",
@@ -178,6 +192,7 @@ class TestUSSDRouteReportFlow:
     def test_step4_confirmation(self):
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000006")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_005",
@@ -195,6 +210,7 @@ class TestUSSDRouteReportFlow:
         """Complete flow: corridor → type → reporter → surface → confirm → save."""
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000007")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_full_001",
@@ -222,6 +238,7 @@ class TestUSSDRouteReportFlow:
         """Complete flow for border wait report."""
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000008")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_border_001",
@@ -245,6 +262,7 @@ class TestUSSDRouteReportFlow:
         """User cancels at confirmation step."""
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000009")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_cancel_001",
@@ -264,6 +282,7 @@ class TestUSSDRouteReportFlow:
     def test_invalid_corridor(self):
         db = TestingSessionLocal()
         try:
+            _seed_consent(db, "+22507000010")
             engine = USSDMenuEngine(db)
             response, stype = engine.process_callback(
                 session_id="test_route_invalid_001",

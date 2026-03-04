@@ -34,8 +34,9 @@ from src.database.ussd_models import (
     USSDProvider, USSDSession, USSDMobileMoneyFlow,
     USSDCommodityReport, USSDTradeDeclaration,
     USSDPortClearance, USSDDailyAggregate,
-    USSDRouteReport,
+    USSDRouteReport, USSDConsent,
 )
+from src.engines.ussd_i18n import t, detect_lang
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +229,83 @@ class USSDMenuEngine:
 
         # Determine country from provider mapping or phone prefix
         country_code = self._detect_country(phone_number, provider_code)
+
+        # ── Consent gate ──────────────────────────────────────────
+        # First-use consent check: if the user has never consented,
+        # show the consent screen before allowing access to any menu.
+        lang = detect_lang(country_code)
+        consent = (
+            self.db.query(USSDConsent)
+            .filter(USSDConsent.phone_hash == phone_hash)
+            .first()
+        )
+        if not consent or not consent.consented:
+            if level == 0:
+                # Show consent screen
+                response = (
+                    f"CON {t('consent.title', lang)}\n"
+                    f"{t('consent.what', lang)}\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"1. {t('consent.accept', lang)}\n"
+                    f"2. {t('consent.decline', lang)}"
+                )
+                self._log_session(
+                    session_id=session_id, provider_code=provider_code,
+                    phone_hash=phone_hash, country_code=country_code,
+                    service_code=service_code, session_type="CONSENT",
+                    menu_level=0, user_input=text, response_text=response,
+                    status="active",
+                )
+                return response, "CONSENT"
+            if level == 1 and parts[0] == "1":
+                # Accept consent
+                if consent:
+                    consent.consented = True
+                    consent.consented_at = datetime.now(timezone.utc)
+                    consent.withdrawn_at = None
+                    consent.consent_lang = lang
+                else:
+                    consent = USSDConsent(
+                        phone_hash=phone_hash,
+                        consented=True,
+                        service_code=service_code,
+                        consent_lang=lang,
+                    )
+                    self.db.add(consent)
+                self.db.commit()
+                # Show main menu after accepting
+                response = (
+                    f"CON {t('consent.thanks', lang)}\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    "0. Rapport Route\n"
+                    "1. Prix du marché\n"
+                    "2. Déclaration commerce\n"
+                    "3. Port / Douanes\n"
+                    "4. Indice WASI pays\n"
+                    "5. Mon compte\n"
+                    "6. eCFA Portefeuille\n"
+                    "7. Activité quotidienne\n"
+                    "8. Données entreprise\n"
+                    "9. Faso Meabo check-in"
+                )
+                self._log_session(
+                    session_id=session_id, provider_code=provider_code,
+                    phone_hash=phone_hash, country_code=country_code,
+                    service_code=service_code, session_type="CONSENT",
+                    menu_level=1, user_input=text, response_text=response,
+                    status="active",
+                )
+                return response, "CONSENT"
+            # Decline or invalid
+            response = f"END {t('consent.declined', lang)}"
+            self._log_session(
+                session_id=session_id, provider_code=provider_code,
+                phone_hash=phone_hash, country_code=country_code,
+                service_code=service_code, session_type="CONSENT",
+                menu_level=level, user_input=text, response_text=response,
+                status="completed",
+            )
+            return response, "CONSENT"
 
         if level == 0:
             # Main menu
@@ -893,7 +971,8 @@ class USSDMenuEngine:
                 "CON Mon compte WASI:\n"
                 "1. Statistiques contributions\n"
                 "2. S'abonner aux alertes\n"
-                "3. Aide"
+                "3. Aide\n"
+                "4. Retirer consentement"
             ), "ACCOUNT"
 
         if parts[0] == "1":
@@ -919,6 +998,24 @@ class USSDMenuEngine:
                 "l'indice de votre pays change\n"
                 "de +/- 5 points."
             ), "ACCOUNT"
+
+        if parts[0] == "4":
+            # Withdraw data collection consent
+            consent = (
+                self.db.query(USSDConsent)
+                .filter(USSDConsent.phone_hash == phone_hash)
+                .first()
+            )
+            if consent and consent.consented:
+                consent.consented = False
+                consent.withdrawn_at = datetime.now(timezone.utc)
+                self.db.commit()
+                return (
+                    "END Consentement retiré.\n"
+                    "Vos données ne seront\n"
+                    "plus collectées."
+                ), "ACCOUNT"
+            return "END Consentement déjà retiré.", "ACCOUNT"
 
         return (
             "END WASI — Aide\n"

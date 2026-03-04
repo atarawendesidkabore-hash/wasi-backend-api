@@ -20,7 +20,7 @@ Endpoints:
 """
 import hashlib
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, Header, Request
@@ -35,7 +35,7 @@ from src.database.ussd_models import (
     USSDProvider, USSDSession, USSDMobileMoneyFlow,
     USSDCommodityReport, USSDTradeDeclaration,
     USSDPortClearance, USSDDailyAggregate,
-    USSDRouteReport,
+    USSDRouteReport, USSDConsent,
 )
 from src.schemas.ussd import (
     USSDCallbackRequest, USSDCallbackResponse,
@@ -702,3 +702,54 @@ async def trigger_route_bridge(
     deduct_credits(current_user, db, "/api/v2/ussd/routes/bridge", cost_multiplier=5.0)
     from src.tasks.ussd_aggregation import bridge_route_to_road_corridors
     return bridge_route_to_road_corridors(db)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# CONSENT — Data collection consent management
+# ══════════════════════════════════════════════════════════════════════
+
+@router.get("/consent/{phone_hash}")
+async def get_consent_status(
+    phone_hash: str = Path(description="SHA-256 hash of the phone number"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check consent status for a phone hash. Costs 1 credit."""
+    deduct_credits(current_user, db, "/api/v2/ussd/consent")
+    consent = (
+        db.query(USSDConsent)
+        .filter(USSDConsent.phone_hash == phone_hash)
+        .first()
+    )
+    if not consent:
+        return {"phone_hash": phone_hash, "consented": False, "record_exists": False}
+    return {
+        "phone_hash": phone_hash,
+        "consented": consent.consented,
+        "consented_at": consent.consented_at.isoformat() if consent.consented_at else None,
+        "withdrawn_at": consent.withdrawn_at.isoformat() if consent.withdrawn_at else None,
+        "consent_lang": consent.consent_lang,
+        "record_exists": True,
+    }
+
+
+@router.post("/consent/{phone_hash}/withdraw")
+async def withdraw_consent(
+    phone_hash: str = Path(description="SHA-256 hash of the phone number"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Withdraw consent for a phone hash. Admin only."""
+    consent = (
+        db.query(USSDConsent)
+        .filter(USSDConsent.phone_hash == phone_hash)
+        .first()
+    )
+    if not consent:
+        raise HTTPException(status_code=404, detail="No consent record found")
+    if not consent.consented:
+        return {"status": "already_withdrawn", "phone_hash": phone_hash}
+    consent.consented = False
+    consent.withdrawn_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"status": "withdrawn", "phone_hash": phone_hash}
