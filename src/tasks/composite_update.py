@@ -137,6 +137,7 @@ def start_scheduler():
         id="news_sweep",
         replace_existing=True,
         misfire_grace_time=120,
+        jitter=120,  # ±2min to stagger against other hourly jobs
     )
 
     # USSD data aggregation runs every 4 hours
@@ -147,6 +148,7 @@ def start_scheduler():
         id="ussd_aggregation",
         replace_existing=True,
         misfire_grace_time=300,
+        jitter=180,  # ±3min to stagger against other 4h jobs
     )
 
     # Route-to-corridor bridge runs every 4 hours (after USSD aggregation)
@@ -156,6 +158,7 @@ def start_scheduler():
         id="route_corridor_bridge",
         replace_existing=True,
         misfire_grace_time=300,
+        jitter=180,
     )
 
     # eCFA CBDC: domestic settlement every 15 minutes
@@ -179,6 +182,7 @@ def start_scheduler():
         id="ecfa_cross_border_settlement",
         replace_existing=True,
         misfire_grace_time=300,
+        jitter=180,
     )
 
     # eCFA CBDC: daily spending limit reset at 00:01 UTC
@@ -207,6 +211,7 @@ def start_scheduler():
         id="ecfa_aml_sweep",
         replace_existing=True,
         misfire_grace_time=120,
+        jitter=120,
     )
 
     # eCFA CBDC: monetary aggregate snapshot daily at 23:55 UTC
@@ -248,6 +253,7 @@ def start_scheduler():
         id="ecfa_facility_maturation",
         replace_existing=True,
         misfire_grace_time=120,
+        jitter=120,
     )
 
     # Forecast engine: daily at 04:00 UTC
@@ -268,6 +274,7 @@ def start_scheduler():
         id="fx_rate_update",
         replace_existing=True,
         misfire_grace_time=300,
+        jitter=180,  # ±3min to stagger against other 6h jobs
     )
 
     # Tokenization: aggregation every 4 hours
@@ -278,6 +285,7 @@ def start_scheduler():
         id="tokenization_aggregation",
         replace_existing=True,
         misfire_grace_time=300,
+        jitter=180,
     )
 
     # Tokenization: payment disbursement daily at 20:00 UTC
@@ -298,6 +306,7 @@ def start_scheduler():
         id="legislative_sweep",
         replace_existing=True,
         misfire_grace_time=600,
+        jitter=180,
     )
 
     # FX Analytics: rate scrape + volatility recomputation every 6 hours
@@ -308,6 +317,7 @@ def start_scheduler():
         id="fx_analytics_update",
         replace_existing=True,
         misfire_grace_time=300,
+        jitter=180,
     )
 
     # Corridor Intelligence: reassess all trade corridors every 6 hours
@@ -318,6 +328,7 @@ def start_scheduler():
         id="corridor_assessment",
         replace_existing=True,
         misfire_grace_time=300,
+        jitter=180,
     )
 
     # Alert evaluation: every 5 minutes

@@ -50,7 +50,7 @@ async def get_all_rates(
     current_user: User = Depends(get_current_user),
 ):
     """Current FX rates for all ECOWAS currencies. 1 credit."""
-    deduct_credits(current_user, db, "/api/v3/fx/rates", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/fx/rates", method="GET", cost_multiplier=1.0)
     engine = FxAnalyticsEngine(db)
     rates = engine.get_current_rates()
     return FxRatesResponse(
@@ -68,7 +68,7 @@ async def get_volatility_dashboard(
     current_user: User = Depends(get_current_user),
 ):
     """Volatility dashboard for all ECOWAS currencies. 3 credits."""
-    deduct_credits(current_user, db, "/api/v3/fx/volatility", "GET", 3.0)
+    deduct_credits(current_user, db, "/api/v3/fx/volatility", method="GET", cost_multiplier=3.0)
     engine = FxAnalyticsEngine(db)
 
     items = []
@@ -103,7 +103,7 @@ async def get_fx_dashboard(
     current_user: User = Depends(get_current_user),
 ):
     """16-country ECOWAS FX analytics dashboard. 5 credits."""
-    deduct_credits(current_user, db, "/api/v3/fx/dashboard", "GET", 5.0)
+    deduct_credits(current_user, db, "/api/v3/fx/dashboard", method="GET", cost_multiplier=5.0)
     engine = FxAnalyticsEngine(db)
     result = engine.get_ecowas_fx_dashboard()
     return FxDashboardResponse(
@@ -120,7 +120,7 @@ async def get_regime_divergence(
     current_user: User = Depends(get_current_user),
 ):
     """CFA zone vs floating currency regime comparison. 3 credits."""
-    deduct_credits(current_user, db, "/api/v3/fx/regime-divergence", "GET", 3.0)
+    deduct_credits(current_user, db, "/api/v3/fx/regime-divergence", method="GET", cost_multiplier=3.0)
     engine = FxAnalyticsEngine(db)
     result = engine.get_regime_divergence()
     return RegimeDivergenceResponse(
@@ -141,7 +141,7 @@ async def refresh_fx_rates(
     current_user: User = Depends(get_current_user),
 ):
     """Trigger FX rate refresh from live APIs. 10 credits."""
-    deduct_credits(current_user, db, "/api/v3/fx/refresh", "POST", 10.0)
+    deduct_credits(current_user, db, "/api/v3/fx/refresh", method="POST", cost_multiplier=10.0)
 
     from src.pipelines.scrapers.fx_scraper import run_fx_scraper
     result = run_fx_scraper(db=db)
@@ -175,7 +175,7 @@ async def get_currency_profile(
     if cc not in VALID_CURRENCIES:
         raise HTTPException(400, f"Invalid currency '{currency}'. Valid: {sorted(VALID_CURRENCIES)}")
 
-    deduct_credits(current_user, db, f"/api/v3/fx/rates/{cc}", "GET", 1.0)
+    deduct_credits(current_user, db, f"/api/v3/fx/rates/{cc}", method="GET", cost_multiplier=1.0)
     engine = FxAnalyticsEngine(db)
     result = engine.get_currency_profile(cc)
     if not result:
@@ -199,7 +199,7 @@ async def get_rate_history(
     if days not in VALID_HISTORY_DAYS:
         raise HTTPException(400, f"Invalid days '{days}'. Valid: {sorted(VALID_HISTORY_DAYS)}")
 
-    deduct_credits(current_user, db, f"/api/v3/fx/rates/{cc}/history", "GET", 2.0)
+    deduct_credits(current_user, db, f"/api/v3/fx/rates/{cc}/history", method="GET", cost_multiplier=2.0)
     engine = FxAnalyticsEngine(db)
     history = engine.get_rate_history(cc, days)
     return FxRateHistoryResponse(
@@ -231,7 +231,7 @@ async def get_trade_cost(
     if to_cc not in valid_countries:
         raise HTTPException(400, f"Invalid country '{to_cc}'. Valid: {sorted(valid_countries)}")
 
-    deduct_credits(current_user, db, f"/api/v3/fx/trade-cost/{from_cc}/{to_cc}", "GET", 3.0)
+    deduct_credits(current_user, db, f"/api/v3/fx/trade-cost/{from_cc}/{to_cc}", method="GET", cost_multiplier=3.0)
     engine = FxAnalyticsEngine(db)
     result = engine.compute_trade_cost(from_cc, to_cc, amount)
     return TradeCostResponse(**result)

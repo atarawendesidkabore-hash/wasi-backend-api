@@ -219,7 +219,7 @@ async def calculate_and_store_transport(
         try:
             pd_ = date.fromisoformat(period_date).replace(day=1)
         except ValueError:
-            raise HTTPException(status_code=400, detail="period_date must be YYYY-MM-DD")
+            raise HTTPException(status_code=400, detail="period_date must be YYYY-MM-DD") from None
     else:
         pd_ = date.today().replace(day=1)
 

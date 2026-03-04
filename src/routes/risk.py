@@ -42,7 +42,7 @@ async def get_country_risk(
     Combines trade (30%), macro (25%), political (20%),
     logistics (15%), and market (10%) risk dimensions.
     """
-    deduct_credits(current_user, db, "/api/v3/risk/country", "GET", 3.0)
+    deduct_credits(current_user, db, "/api/v3/risk/country", method="GET", cost_multiplier=3.0)
 
     engine = RiskEngine(db)
     result = engine.score_country(country_code)
@@ -59,7 +59,7 @@ async def get_regional_risk(
     current_user: User = Depends(get_current_user),
 ):
     """Get risk scores for all 16 ECOWAS countries plus regional aggregate."""
-    deduct_credits(current_user, db, "/api/v3/risk/regional", "GET", 10.0)
+    deduct_credits(current_user, db, "/api/v3/risk/regional", method="GET", cost_multiplier=10.0)
 
     engine = RiskEngine(db)
     result = engine.score_all_countries()
@@ -80,7 +80,7 @@ async def detect_anomalies(
     Checks for: index outliers (>2σ), sudden changes (>15%),
     negative event accumulation, and data staleness.
     """
-    deduct_credits(current_user, db, "/api/v3/risk/anomalies", "GET", 2.0)
+    deduct_credits(current_user, db, "/api/v3/risk/anomalies", method="GET", cost_multiplier=2.0)
 
     engine = RiskEngine(db)
     result = engine.detect_anomalies(country_code, lookback_days)
@@ -104,7 +104,7 @@ async def get_country_correlation(
     Returns correlation coefficient (-1 to +1), data point count,
     and human-readable interpretation.
     """
-    deduct_credits(current_user, db, "/api/v3/risk/correlation", "GET", 2.0)
+    deduct_credits(current_user, db, "/api/v3/risk/correlation", method="GET", cost_multiplier=2.0)
 
     engine = RiskEngine(db)
     result = engine.correlate_countries(country_a, country_b, lookback_days)

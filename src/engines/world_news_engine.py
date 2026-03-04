@@ -624,6 +624,36 @@ def cascade_to_news_events(
         if existing:
             continue
 
+        # Cross-pipeline dedup: skip if news_sweep already detected a similar event
+        # for this country within 24h (prevents double-counting same real-world event)
+        cutoff_24h = now - timedelta(hours=24)
+        dup_regional = (
+            db.query(NewsEvent)
+            .filter(
+                NewsEvent.country_id == country.id,
+                NewsEvent.event_type == world_event.event_type,
+                NewsEvent.detected_at >= cutoff_24h,
+                NewsEvent.source_name != "world_news_cascade",
+            )
+            .first()
+        )
+        if dup_regional:
+            # Store assessment without creating duplicate NewsEvent
+            impact = NewsImpactAssessment(
+                world_news_event_id=world_event.id,
+                country_code=cc,
+                direct_impact=assessment["direct_impact"],
+                indirect_impact=assessment["indirect_impact"],
+                systemic_impact=assessment["systemic_impact"],
+                country_magnitude=assessment["country_magnitude"],
+                transmission_channel=assessment["transmission_channel"],
+                explanation=assessment["explanation"] + " [dedup: regional event exists]",
+                news_event_created=False,
+                news_event_id=dup_regional.id,
+            )
+            db.add(impact)
+            continue
+
         # Create country-specific NewsEvent
         news_event = NewsEvent(
             country_id=country.id,

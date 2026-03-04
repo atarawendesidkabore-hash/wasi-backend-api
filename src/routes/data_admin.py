@@ -140,7 +140,7 @@ async def trigger_worldbank_refresh(
         }
     except Exception as exc:
         logger.error("Manual WB refresh failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"World Bank refresh failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"World Bank refresh failed: {exc}") from None
 
 
 @router.post("/imf/refresh")
@@ -170,7 +170,7 @@ async def trigger_imf_refresh(
         }
     except Exception as exc:
         logger.error("Manual IMF refresh failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"IMF refresh failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"IMF refresh failed: {exc}") from None
 
 
 @router.post("/acled/refresh")
@@ -204,7 +204,7 @@ async def trigger_acled_refresh(
         }
     except Exception as exc:
         logger.error("Manual ACLED refresh failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"ACLED refresh failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"ACLED refresh failed: {exc}") from None
 
 
 @router.post("/comtrade/refresh")
@@ -235,7 +235,7 @@ async def trigger_comtrade_refresh(
         }
     except Exception as exc:
         logger.error("Manual Comtrade refresh failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Comtrade refresh failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Comtrade refresh failed: {exc}") from None
 
 
 @router.post("/commodities/refresh")
@@ -264,7 +264,7 @@ async def trigger_commodity_refresh(
         }
     except Exception as exc:
         logger.error("Manual commodity refresh failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Commodity refresh failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Commodity refresh failed: {exc}") from None
 
 
 @router.get("/commodities/latest")

@@ -93,7 +93,7 @@ async def execute_cross_border_payment(
     - WAMZ→WAEMU: external bridge → FX conversion → eCFA credit
     """
     _verify_sender_ownership(db, current_user, body.sender_wallet_id)
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/cross-border", "POST", 5.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/cross-border", method="POST", cost_multiplier=5.0)
 
     router_engine = CbdcPaymentRouter(db)
     result = router_engine.execute_payment(
@@ -124,7 +124,7 @@ async def get_payment_quote(
     Use the returned quote_id when executing the payment to guarantee the rate.
     """
     _verify_sender_ownership(db, current_user, body.sender_wallet_id)
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/quote", "POST", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/quote", method="POST", cost_multiplier=1.0)
 
     router_engine = CbdcPaymentRouter(db)
     result = router_engine.get_quote(
@@ -152,7 +152,7 @@ async def get_payment_status(
 ):
     """Get the current status of a cross-border payment."""
     _verify_payment_access(db, current_user, payment_id)
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/status", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/status", method="GET", cost_multiplier=1.0)
 
     router_engine = CbdcPaymentRouter(db)
     result = router_engine.get_payment_status(payment_id)
@@ -173,7 +173,7 @@ async def get_payment_trace(
     → destination credit → settlement.
     """
     _verify_payment_access(db, current_user, payment_id)
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/trace", "GET", 2.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/trace", method="GET", cost_multiplier=2.0)
 
     router_engine = CbdcPaymentRouter(db)
     result = router_engine.get_payment_trace(payment_id)
@@ -201,7 +201,7 @@ async def list_corridors(
     Returns 240 corridors (16×15) with fee breakdown, rail type,
     and availability status.
     """
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/corridors", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/corridors", method="GET", cost_multiplier=1.0)
 
     router_engine = CbdcPaymentRouter(db)
     corridors = router_engine.list_corridors()
@@ -223,7 +223,7 @@ async def get_all_fx_rates(
     Rates are quoted as XOF per 1 unit of target currency.
     Includes staleness indicator (stale if >24 hours old).
     """
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/fx/rates", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/fx/rates", method="GET", cost_multiplier=1.0)
 
     fx_engine = CbdcFxEngine(db)
     rates = fx_engine.get_all_rates()
@@ -242,7 +242,7 @@ async def get_fx_rate(
 
     Accepts formats: 'XOF-NGN', 'XOF_NGN', or just 'NGN'.
     """
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/fx/rates", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/fx/rates", method="GET", cost_multiplier=1.0)
 
     # Parse currency pair
     pair = currency_pair.upper().replace("-", "_")
@@ -270,7 +270,7 @@ async def update_fx_rate(
 
     Inserts or updates today's rate for the specified currency.
     """
-    deduct_credits(current_user, db, "/api/v3/ecfa/payments/fx/rates/update", "POST", 10.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/payments/fx/rates/update", method="POST", cost_multiplier=10.0)
 
     if body.new_rate <= 0:
         raise HTTPException(status_code=400, detail="FX rate must be positive")

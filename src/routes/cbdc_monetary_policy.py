@@ -68,7 +68,7 @@ async def get_current_rates(
     current_user: User = Depends(get_current_user),
 ):
     """Get all current BCEAO policy rates (taux directeur, corridor, reserves)."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/rates/current", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/rates/current", method="GET", cost_multiplier=1.0)
     engine = CbdcMonetaryPolicyEngine(db)
     return engine.get_current_rates()
 
@@ -86,7 +86,7 @@ async def set_policy_rate(
 
     When taux_directeur changes, corridor rates auto-adjust (±200bp).
     """
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/rates/set", "POST", 20.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/rates/set", method="POST", cost_multiplier=20.0)
     engine = CbdcMonetaryPolicyEngine(db)
     try:
         result = engine.set_policy_rate(
@@ -97,7 +97,7 @@ async def set_policy_rate(
         )
         return SetPolicyRateResponse(**result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.get("/rates/history/{rate_type}", response_model=RateHistoryResponse)
@@ -110,7 +110,7 @@ async def get_rate_history(
     current_user: User = Depends(get_current_user),
 ):
     """Get historical changes for a specific rate type."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/rates/history", "GET", 2.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/rates/history", method="GET", cost_multiplier=2.0)
     engine = CbdcMonetaryPolicyEngine(db)
     history = engine.get_rate_history(rate_type.upper(), limit)
     return RateHistoryResponse(rate_type=rate_type.upper(), history=history)
@@ -126,7 +126,7 @@ async def get_reserve_status(
     current_user: User = Depends(get_current_user),
 ):
     """Compute and return reserve requirement compliance for all banks."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/reserves/status", "GET", 5.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/reserves/status", method="GET", cost_multiplier=5.0)
     engine = CbdcMonetaryPolicyEngine(db)
     result = engine.compute_reserve_requirements()
     return ReserveRequirementResponse(**result)
@@ -142,7 +142,7 @@ async def set_reserve_ratio(
     _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Set a new reserve requirement ratio for all commercial banks."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/reserves/set-ratio", "POST", 20.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/reserves/set-ratio", method="POST", cost_multiplier=20.0)
     engine = CbdcMonetaryPolicyEngine(db)
     return engine.set_reserve_ratio(body.new_ratio_percent)
 
@@ -159,7 +159,7 @@ async def open_lending_facility(
     _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """Bank borrows from BCEAO at taux de prêt marginal."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/lending", "POST", 10.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/lending", method="POST", cost_multiplier=10.0)
     engine = CbdcMonetaryPolicyEngine(db)
     try:
         result = engine.open_lending_facility(
@@ -170,7 +170,7 @@ async def open_lending_facility(
         )
         return FacilityResponse(**result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post("/facility/deposit/open", response_model=FacilityResponse)
@@ -183,7 +183,7 @@ async def open_deposit_facility(
     _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """Bank deposits excess liquidity at BCEAO at taux de dépôt."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/deposit", "POST", 10.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/deposit", method="POST", cost_multiplier=10.0)
     engine = CbdcMonetaryPolicyEngine(db)
     try:
         result = engine.open_deposit_facility(
@@ -192,7 +192,7 @@ async def open_deposit_facility(
         )
         return FacilityResponse(**result)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post("/facility/mature", response_model=FacilityMaturityResponse)
@@ -204,7 +204,7 @@ async def mature_facilities(
     _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Process all matured standing facilities (repay lending, return deposits)."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/mature", "POST", 10.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/facility/mature", method="POST", cost_multiplier=10.0)
     engine = CbdcMonetaryPolicyEngine(db)
     result = engine.mature_facilities()
     return FacilityMaturityResponse(**result)
@@ -221,7 +221,7 @@ async def apply_daily_interest(
     _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Apply daily interest accrual and demurrage across all wallets."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/interest/apply-daily", "POST", 10.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/interest/apply-daily", method="POST", cost_multiplier=10.0)
     engine = CbdcMonetaryPolicyEngine(db)
     result = engine.apply_daily_interest()
     return DailyInterestResponse(**result)
@@ -237,7 +237,7 @@ async def get_money_supply_all(
     current_user: User = Depends(get_current_user),
 ):
     """Get WAEMU-wide M0/M1/M2 money supply."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/money-supply", "GET", 3.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/money-supply", method="GET", cost_multiplier=3.0)
     engine = CbdcMonetaryPolicyEngine(db)
     result = engine.compute_money_supply()
     return MoneySupplyResponse(**result)
@@ -252,7 +252,7 @@ async def get_money_supply_country(
     current_user: User = Depends(get_current_user),
 ):
     """Get M0/M1/M2 money supply for a specific WAEMU country."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/money-supply/cc", "GET", 3.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/money-supply/cc", method="GET", cost_multiplier=3.0)
     engine = CbdcMonetaryPolicyEngine(db)
     result = engine.compute_money_supply(country_code.upper())
     return MoneySupplyResponse(**result)
@@ -267,7 +267,7 @@ async def get_enhanced_aggregates(
     current_user: User = Depends(get_current_user),
 ):
     """Full monetary aggregates: M0/M1/M2 + policy rates + reserves + facilities."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/aggregates", "GET", 5.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/aggregates", method="GET", cost_multiplier=5.0)
     engine = CbdcMonetaryPolicyEngine(db)
     result = engine.compute_enhanced_monetary_aggregates(country_code.upper())
     return EnhancedAggregateResponse(**result)
@@ -285,7 +285,7 @@ async def record_policy_decision(
     _role=Depends(require_cbdc_role(["CENTRAL_BANK"])),
 ):
     """Record a Comité de Politique Monétaire decision and apply rate changes."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/decision/record", "POST", 20.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/decision/record", method="POST", cost_multiplier=20.0)
     engine = CbdcMonetaryPolicyEngine(db)
     result = engine.record_policy_decision(
         meeting_date=body.meeting_date,
@@ -315,7 +315,7 @@ async def get_decision_history(
     current_user: User = Depends(get_current_user),
 ):
     """Get history of monetary policy committee decisions."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/decision/history", "GET", 3.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/decision/history", method="GET", cost_multiplier=3.0)
     engine = CbdcMonetaryPolicyEngine(db)
     history = engine.get_decision_history(limit)
     return [PolicyDecisionHistoryItem(**item) for item in history]
@@ -333,7 +333,7 @@ async def register_collateral(
     _role=Depends(require_cbdc_role(["CENTRAL_BANK", "COMMERCIAL_BANK"])),
 ):
     """Register an eligible collateral asset for lending facility operations."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/collateral/register", "POST", 5.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/collateral/register", method="POST", cost_multiplier=5.0)
 
     collateral_value = body.market_value_ecfa * (1.0 - body.haircut_percent / 100.0)
 
@@ -378,7 +378,7 @@ async def list_collateral(
     current_user: User = Depends(get_current_user),
 ):
     """List eligible collateral assets."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/collateral/list", "GET", 2.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/monetary-policy/collateral/list", method="GET", cost_multiplier=2.0)
 
     query = db.query(CbdcEligibleCollateral)
     if eligible_only:

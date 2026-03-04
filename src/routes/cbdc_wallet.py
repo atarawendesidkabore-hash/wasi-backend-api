@@ -46,7 +46,7 @@ async def create_wallet(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new eCFA wallet. Auto-assigns KYC Tier 0 (or Tier 3 for institutions)."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/create", "POST", 2.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/create", method="POST", cost_multiplier=2.0)
 
     # Validate country
     country = db.query(Country).filter(
@@ -127,7 +127,7 @@ async def get_balance(
     current_user: User = Depends(get_current_user),
 ):
     """Get wallet balance with ledger verification."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/balance", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/balance", method="GET", cost_multiplier=1.0)
 
     # IDOR protection: verify the wallet belongs to the current user
     wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == wallet_id).first()
@@ -150,7 +150,7 @@ async def get_wallet_info(
     current_user: User = Depends(get_current_user),
 ):
     """Get wallet metadata and status."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/info", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/info", method="GET", cost_multiplier=1.0)
 
     wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == wallet_id).first()
     if not wallet:
@@ -228,7 +228,7 @@ async def freeze_wallet(
     current_user: User = Depends(require_admin),
 ):
     """Freeze a wallet (admin only)."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/freeze", "POST", 5.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/freeze", method="POST", cost_multiplier=5.0)
 
     # Ownership check: verify admin_wallet_id belongs to current_user
     admin_wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == body.admin_wallet_id).first()
@@ -254,7 +254,7 @@ async def unfreeze_wallet(
     current_user: User = Depends(require_admin),
 ):
     """Unfreeze a previously frozen wallet (admin only)."""
-    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/unfreeze", "POST", 5.0)
+    deduct_credits(current_user, db, "/api/v3/ecfa/wallet/unfreeze", method="POST", cost_multiplier=5.0)
 
     # Ownership check: verify admin_wallet_id belongs to current_user
     admin_wallet = db.query(CbdcWallet).filter(CbdcWallet.wallet_id == body.admin_wallet_id).first()

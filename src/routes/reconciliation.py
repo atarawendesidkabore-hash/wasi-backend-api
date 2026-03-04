@@ -35,7 +35,7 @@ def integrity_dashboard(
     current_user=Depends(get_current_user),
 ):
     """Source health + quality scorecard + freshness overview."""
-    deduct_credits(current_user, db, "/api/v3/integrity/dashboard", "GET", 3.0)
+    deduct_credits(current_user, db, "/api/v3/integrity/dashboard", method="GET", cost_multiplier=3.0)
     engine = ReconciliationEngine(db)
     return engine.get_integrity_dashboard()
 
@@ -48,7 +48,7 @@ def list_sources(
     current_user=Depends(get_current_user),
 ):
     """All data source health statuses."""
-    deduct_credits(current_user, db, "/api/v3/integrity/sources", "GET", 1.0)
+    deduct_credits(current_user, db, "/api/v3/integrity/sources", method="GET", cost_multiplier=1.0)
     sources = db.query(DataSourceHealth).order_by(DataSourceHealth.source_name).all()
     return {
         "sources": [
@@ -80,7 +80,7 @@ def list_quarantine(
     current_user=Depends(get_current_user),
 ):
     """Paginated quarantine queue with filters."""
-    deduct_credits(current_user, db, "/api/v3/integrity/quarantine", "GET", 2.0)
+    deduct_credits(current_user, db, "/api/v3/integrity/quarantine", method="GET", cost_multiplier=2.0)
 
     query = db.query(DataQuarantine)
     if status:
@@ -128,7 +128,7 @@ def recent_anomalies(
     current_user=Depends(get_current_user),
 ):
     """Recent anomalies within the last N hours."""
-    deduct_credits(current_user, db, "/api/v3/integrity/anomalies", "GET", 2.0)
+    deduct_credits(current_user, db, "/api/v3/integrity/anomalies", method="GET", cost_multiplier=2.0)
 
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -166,7 +166,7 @@ def trigger_reconciliation(
     current_user=Depends(get_current_user),
 ):
     """Trigger a manual full reconciliation run."""
-    deduct_credits(current_user, db, "/api/v3/integrity/reconcile", "POST", 10.0)
+    deduct_credits(current_user, db, "/api/v3/integrity/reconcile", method="POST", cost_multiplier=10.0)
     engine = ReconciliationEngine(db)
     result = engine.run_full_reconciliation(run_type="MANUAL")
     return result
@@ -183,7 +183,7 @@ def quarantine_detail(
     current_user=Depends(get_current_user),
 ):
     """Single quarantine record detail."""
-    deduct_credits(current_user, db, f"/api/v3/integrity/quarantine/{quarantine_id}", "GET", 1.0)
+    deduct_credits(current_user, db, f"/api/v3/integrity/quarantine/{quarantine_id}", method="GET", cost_multiplier=1.0)
     q = db.query(DataQuarantine).filter(DataQuarantine.id == quarantine_id).first()
     if not q:
         raise HTTPException(404, "Quarantine record not found")
@@ -230,7 +230,7 @@ def get_lineage(
     current_user=Depends(get_current_user),
 ):
     """Data lineage for a specific record."""
-    deduct_credits(current_user, db, f"/api/v3/integrity/lineage/{table_name}/{record_id}", "GET", 2.0)
+    deduct_credits(current_user, db, f"/api/v3/integrity/lineage/{table_name}/{record_id}", method="GET", cost_multiplier=2.0)
     engine = ReconciliationEngine(db)
     sources = engine.get_lineage(table_name, record_id)
     return {

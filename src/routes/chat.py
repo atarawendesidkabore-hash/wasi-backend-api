@@ -150,7 +150,7 @@ async def proxy_chat(
                 json=body,
             )
         except httpx.RequestError:
-            raise HTTPException(status_code=502, detail="Chat service temporarily unavailable")
+            raise HTTPException(status_code=502, detail="Chat service temporarily unavailable") from None
 
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail="Chat service returned an error")
@@ -537,7 +537,7 @@ async def intelligence_chat(
                 json=body,
             )
         except httpx.RequestError:
-            raise HTTPException(status_code=502, detail="Chat service temporarily unavailable")
+            raise HTTPException(status_code=502, detail="Chat service temporarily unavailable") from None
 
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail="Chat service returned an error")

@@ -445,10 +445,10 @@ async def forecast_stock_market(
             .all()
         )
     except ImportError:
-        raise HTTPException(status_code=404, detail="Stock market data not available")
+        raise HTTPException(status_code=404, detail="Stock market data not available") from None
     except Exception as exc:
         logger.error("Stock market query failed for %s: %s", code, exc)
-        raise HTTPException(status_code=500, detail="Stock market data query failed")
+        raise HTTPException(status_code=500, detail="Stock market data query failed") from None
 
     if len(rows) < 3:
         raise HTTPException(status_code=404, detail=f"Insufficient stock data for {code}")
@@ -510,10 +510,10 @@ async def forecast_ecfa_monetary(
             .all()
         )
     except ImportError:
-        raise HTTPException(status_code=404, detail="eCFA monetary data not available")
+        raise HTTPException(status_code=404, detail="eCFA monetary data not available") from None
     except Exception as exc:
         logger.error("eCFA monetary query failed for %s/%s: %s", cc, agg, exc)
-        raise HTTPException(status_code=500, detail="eCFA monetary data query failed")
+        raise HTTPException(status_code=500, detail="eCFA monetary data query failed") from None
 
     col = AGGREGATE_COLUMN[agg]
     values = [getattr(r, col) for r in rows if getattr(r, col, None) is not None]

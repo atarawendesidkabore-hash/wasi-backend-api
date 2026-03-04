@@ -1,0 +1,16 @@
+# Ruff linter config — WASI Backend API
+# Phase 1: Critical errors only. Tighten progressively.
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = [
+    "F821",  # undefined-name (real bugs)
+    "F811",  # redefined-unused-name
+    "F601",  # contains-comparison with literal
+    "B904",  # raise-without-from-inside-except
+]
+ignore = []
+
+[lint.per-file-ignores]
+"tests/*" = ["B904"]
