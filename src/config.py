@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     COMTRADE_API_KEY: str = ""       # UN Comtrade subscription key (optional)
     SKIP_SCRAPERS: bool = False      # Skip external API scrapers on startup (fast local dev)
     LIGHT_STARTUP: bool = False      # Skip all seeding/bootstrap — just init_db (for free-tier hosting)
+    FORECAST_ENGINE_VERSION: int = 2  # 1 = v1 only (/api/v3/), 2 = v1+v2 (/api/v3/ + /api/v4/)
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

@@ -256,7 +256,7 @@ def start_scheduler():
         jitter=120,
     )
 
-    # Forecast engine: daily at 04:00 UTC
+    # Forecast v1 engine: daily at 04:00 UTC (powers /api/v3/forecast/)
     from src.tasks.forecast_task import run_forecast_update
     _scheduler.add_job(
         run_forecast_update,
@@ -265,6 +265,17 @@ def start_scheduler():
         replace_existing=True,
         misfire_grace_time=600,
     )
+
+    # Forecast v2 engine: daily at 04:30 UTC (powers /api/v4/forecast/)
+    if settings.FORECAST_ENGINE_VERSION >= 2:
+        from src.tasks.forecast_v2_task import run_forecast_v2_update_sync
+        _scheduler.add_job(
+            run_forecast_v2_update_sync,
+            trigger=CronTrigger(hour=4, minute=30),
+            id="forecast_v2_update",
+            replace_existing=True,
+            misfire_grace_time=600,
+        )
 
     # WASI-Pay: FX rate refresh every 6 hours
     from src.tasks.fx_rate_update import run_fx_rate_update
