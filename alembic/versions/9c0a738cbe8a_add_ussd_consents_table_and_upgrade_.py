@@ -517,9 +517,6 @@ def upgrade() -> None:
                type_=sa.Numeric(precision=18, scale=2, asdecimal=False),
                existing_nullable=True)
 
-    with op.batch_alter_table('ussd_daily_aggregates', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('route_condition_score', sa.Float(), nullable=True))
-
     with op.batch_alter_table('ussd_mobile_money_flows', schema=None) as batch_op:
         batch_op.alter_column('total_value_local',
                existing_type=sa.FLOAT(),
@@ -673,9 +670,6 @@ def downgrade() -> None:
                existing_type=sa.Numeric(precision=18, scale=2, asdecimal=False),
                type_=sa.FLOAT(),
                existing_nullable=True)
-
-    with op.batch_alter_table('ussd_daily_aggregates', schema=None) as batch_op:
-        batch_op.drop_column('route_condition_score')
 
     with op.batch_alter_table('ussd_commodity_reports', schema=None) as batch_op:
         batch_op.alter_column('price_usd',
@@ -1086,8 +1080,6 @@ def downgrade() -> None:
                existing_nullable=True)
 
     with op.batch_alter_table('cbdc_eligible_collateral', schema=None) as batch_op:
-        batch_op.drop_constraint(None, type_='foreignkey')
-        batch_op.create_foreign_key(None, 'cbdc_wallets', ['owner_wallet_id'], ['wallet_id'])
         batch_op.alter_column('collateral_value_ecfa',
                existing_type=sa.Numeric(precision=18, scale=2, asdecimal=False),
                type_=sa.FLOAT(),
