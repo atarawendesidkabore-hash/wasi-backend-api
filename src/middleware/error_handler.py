@@ -36,6 +36,6 @@ class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
             }
             if settings.DEBUG:
                 body["detail"] = str(exc)
-                body["traceback"] = tb.splitlines()
+                # Traceback logged server-side only — never expose in HTTP response
 
             return JSONResponse(status_code=500, content=body)

@@ -50,6 +50,11 @@ PROFILE_WEIGHTS: Dict[str, Dict[str, float]] = {
     "small_island":        {"maritime": 0.40, "air": 0.30, "rail": 0.00, "road": 0.30},
 }
 
+# Validate all profile weights sum to 1.0 at import time
+for _profile, _weights in PROFILE_WEIGHTS.items():
+    _total = sum(_weights.values())
+    assert abs(_total - 1.0) < 1e-9, f"Transport profile {_profile} weights sum to {_total}, not 1.0"
+
 # SITARAIL benchmarks (tonnes/month)
 SITARAIL_BASELINE_MONTHLY = 84_683   # 2019 monthly average (1,016,200 t/yr)
 SITARAIL_2024_MONTHLY = 66_274       # 2024 monthly average

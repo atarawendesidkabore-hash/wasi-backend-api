@@ -23,10 +23,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 _blacklisted_jtis: set[str] = set()
 _blacklist_lock = threading.Lock()
 _blacklist_expiry: dict[str, float] = {}  # jti → unix timestamp of token exp
+_BLACKLIST_MAX_SIZE = 10_000  # prevent unbounded memory growth
 
 
 def blacklist_jti(jti: str, exp_timestamp: float) -> None:
     with _blacklist_lock:
+        # Evict expired entries if at capacity
+        if len(_blacklisted_jtis) >= _BLACKLIST_MAX_SIZE:
+            now = datetime.now(timezone.utc).timestamp()
+            expired = [j for j, exp in _blacklist_expiry.items() if exp < now]
+            for j in expired:
+                _blacklisted_jtis.discard(j)
+                del _blacklist_expiry[j]
         _blacklisted_jtis.add(jti)
         _blacklist_expiry[jti] = exp_timestamp
 

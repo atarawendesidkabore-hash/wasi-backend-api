@@ -26,8 +26,6 @@ COUNTRY_WACC_PARAMS: dict = {
     "CI": {"beta": 1.15, "eq_ratio": 0.58, "tax": 0.25, "currency": "XOF"},
     "GH": {"beta": 1.25, "eq_ratio": 0.57, "tax": 0.25, "currency": "GHS"},
     "SN": {"beta": 1.10, "eq_ratio": 0.60, "tax": 0.30, "currency": "XOF"},
-    "CM": {"beta": 1.20, "eq_ratio": 0.55, "tax": 0.33, "currency": "XAF"},
-    "AO": {"beta": 1.35, "eq_ratio": 0.52, "tax": 0.25, "currency": "AOA"},
     "BF": {"beta": 1.40, "eq_ratio": 0.50, "tax": 0.28, "currency": "XOF"},
     "ML": {"beta": 1.40, "eq_ratio": 0.50, "tax": 0.30, "currency": "XOF"},
     "GN": {"beta": 1.35, "eq_ratio": 0.52, "tax": 0.35, "currency": "GNF"},

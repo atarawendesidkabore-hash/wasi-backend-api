@@ -24,6 +24,7 @@ RSS feeds monitored:
 """
 import logging
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urljoin
@@ -34,6 +35,7 @@ from src.database.connection import SessionLocal
 from src.database.models import Country, CountryIndex, NewsEvent, LiveSignal, GovernmentDocument
 
 logger = logging.getLogger(__name__)
+_news_sweep_lock = threading.Lock()
 
 # ── Keyword tables ────────────────────────────────────────────────────────────
 EVENT_KEYWORDS = {
@@ -556,6 +558,9 @@ def _update_live_signals(db: Session) -> int:
 
 def run_news_sweep():
     """Entry point called by APScheduler. Uses its own DB session."""
+    if not _news_sweep_lock.acquire(blocking=False):
+        logger.warning("news_sweep: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         result = sweep_news(db)
@@ -567,3 +572,4 @@ def run_news_sweep():
         logger.error("News sweep failed: %s", exc, exc_info=True)
     finally:
         db.close()
+        _news_sweep_lock.release()

@@ -6,7 +6,7 @@ without re-running engine calculations on every request.
 Refreshed daily at 04:00 UTC by the forecast scheduler task.
 """
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date,
+    Column, Integer, String, Float, Numeric, DateTime, Date,
     UniqueConstraint,
 )
 from datetime import timezone, datetime
@@ -27,11 +27,11 @@ class ForecastResult(Base):
     horizon_months = Column(Integer, nullable=False)
 
     # Forecast output
-    forecast_value = Column(Float, nullable=False)
-    lower_1sigma = Column(Float)
-    upper_1sigma = Column(Float)
-    lower_2sigma = Column(Float)
-    upper_2sigma = Column(Float)
+    forecast_value = Column(Numeric(18, 4, asdecimal=False), nullable=False)
+    lower_1sigma = Column(Numeric(18, 4, asdecimal=False))
+    upper_1sigma = Column(Numeric(18, 4, asdecimal=False))
+    lower_2sigma = Column(Numeric(18, 4, asdecimal=False))
+    upper_2sigma = Column(Numeric(18, 4, asdecimal=False))
 
     # Method metadata
     method = Column(String(20), nullable=False, default="ensemble")

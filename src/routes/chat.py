@@ -104,7 +104,6 @@ class IntelligenceRequest(BaseModel):
 # ── Raw proxy ─────────────────────────────────────────────────────────────────
 
 @router.post("")
-@limiter.limit("5/minute")
 async def proxy_chat(
     request: Request,
     payload: ChatRequest,
@@ -167,8 +166,8 @@ async def proxy_chat(
 
 # ── RAG helpers ───────────────────────────────────────────────────────────────
 
-_WASI_CODES = {"NG", "CI", "GH", "SN", "CM", "AO", "TZ", "KE",
-               "MA", "MZ", "ET", "BJ", "TG", "GN", "MG", "MU"}
+_WASI_CODES = {"NG", "CI", "GH", "SN", "BF", "ML", "GN", "BJ",
+               "TG", "NE", "MR", "GW", "SL", "LR", "GM", "CV"}
 
 # Maps common country names (and alternate spellings) to ISO-2 codes
 _NAME_TO_CODE: dict[str, str] = {
@@ -183,11 +182,12 @@ _NAME_TO_CODE: dict[str, str] = {
     "belgium": "BE", "spain": "ES", "italy": "IT",
     "uae": "AE", "emirates": "AE", "portugal": "PT",
     "japan": "JP", "south africa": "ZA", "saudi arabia": "SA",
-    "nigeria": "NG", "ivory coast": "CI",
-    "ghana": "GH", "senegal": "SN", "cameroon": "CM", "angola": "AO",
-    "tanzania": "TZ", "kenya": "KE", "morocco": "MA", "mozambique": "MZ",
-    "ethiopia": "ET", "benin": "BJ", "togo": "TG", "guinea": "GN",
-    "madagascar": "MG", "mauritius": "MU",
+    "nigeria": "NG", "ivory coast": "CI", "cote d'ivoire": "CI",
+    "ghana": "GH", "senegal": "SN", "burkina faso": "BF", "burkina": "BF",
+    "mali": "ML", "guinea": "GN", "guinee": "GN", "benin": "BJ", "togo": "TG",
+    "niger": "NE", "mauritania": "MR", "mauritanie": "MR",
+    "guinea-bissau": "GW", "guinee-bissau": "GW",
+    "sierra leone": "SL", "liberia": "LR", "gambia": "GM", "cape verde": "CV",
 }
 
 
@@ -420,9 +420,9 @@ def _build_context(question: str, db: Session) -> str:
 _SYSTEM_PROMPT_EN = (
     "You are the WASI Intelligence Assistant for the West African Shipping & "
     "Economic Intelligence platform.\n\n"
-    "WASI tracks 16 countries: NG(28%), CI(22%), GH(15%), SN(10%), CM(4%), "
-    "AO(3.5%), TZ(3%), KE(3%), MA(2.5%), MZ(2%), ET(2%), BJ(1%), TG(1%), "
-    "GN(1%), MG(1%), MU(1%).\n\n"
+    "WASI tracks 16 ECOWAS countries: NG(28%), CI(22%), GH(15%), SN(10%), "
+    "BF(4%), ML(4%), GN(4%), BJ(3%), TG(3%), "
+    "NE(1%), MR(1%), GW(1%), SL(1%), LR(1%), GM(1%), CV(1%).\n\n"
     "WASI Index formula: Shipping 40% + Trade 30% + Infrastructure 20% + Economic 10%.\n\n"
     "Stock exchanges covered: NGX (Nigeria, 28%), GSE (Ghana, 15%), "
     "BRVM (Côte d'Ivoire/Senegal/Benin/Togo, 34%) — combined 77% of WASI weight.\n\n"
@@ -442,9 +442,9 @@ _SYSTEM_PROMPT_EN = (
 _SYSTEM_PROMPT_FR = (
     "Vous êtes l'Assistant Intelligence WASI pour la plateforme d'Intelligence "
     "du Transport Maritime et Économique Ouest-Africain.\n\n"
-    "WASI suit 16 pays : NG(28%), CI(22%), GH(15%), SN(10%), CM(4%), "
-    "AO(3.5%), TZ(3%), KE(3%), MA(2.5%), MZ(2%), ET(2%), BJ(1%), TG(1%), "
-    "GN(1%), MG(1%), MU(1%).\n\n"
+    "WASI suit 16 pays CEDEAO : NG(28%), CI(22%), GH(15%), SN(10%), "
+    "BF(4%), ML(4%), GN(4%), BJ(3%), TG(3%), "
+    "NE(1%), MR(1%), GW(1%), SL(1%), LR(1%), GM(1%), CV(1%).\n\n"
     "Formule de l'indice WASI : Transport maritime 40% + Commerce 30% + Infrastructure 20% + Économie 10%.\n\n"
     "Bourses couvertes : NGX (Nigeria, 28%), GSE (Ghana, 15%), "
     "BRVM (Côte d'Ivoire/Sénégal/Bénin/Togo, 34%) — 77% du poids WASI combiné.\n\n"
@@ -489,7 +489,6 @@ def _grounding_score(context: str, answer: str) -> float:
 # ── Intelligence endpoint (RAG) ───────────────────────────────────────────────
 
 @router.post("/intelligence")
-@limiter.limit("5/minute")
 async def intelligence_chat(
     request: Request,
     payload: IntelligenceRequest,

@@ -355,3 +355,63 @@ def test_guardrail_human_review_large_mom_change():
     )
     assert result["required"] is True
     assert any("25.0" in r or "change" in r.lower() for r in result["reasons"])
+
+
+# ── GDPR Right to Erasure ────────────────────────────────────────────────────
+
+def test_delete_account_success():
+    """DELETE /api/auth/me with correct password erases user and all data."""
+    password = "DeleteMe1"
+    token = _register_and_login(username="deluser", email="del@test.com", password=password)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Confirm user exists first
+    resp = client.get("/api/auth/me", headers=headers)
+    assert resp.status_code == 200
+    uid = resp.json()["id"]
+
+    # Delete account
+    resp = client.request("DELETE", "/api/auth/me", headers=headers, json={"password": password})
+    assert resp.status_code == 200
+    assert "deleted" in resp.json()["detail"].lower()
+
+    # Token should now be blacklisted — /me returns 401
+    resp = client.get("/api/auth/me", headers=headers)
+    assert resp.status_code == 401
+
+    # User row should be gone
+    from tests.conftest import TestingSessionLocal
+    from src.database.models import User
+    db = TestingSessionLocal()
+    assert db.query(User).filter(User.id == uid).first() is None
+    db.close()
+
+
+def test_delete_account_wrong_password():
+    """DELETE /api/auth/me rejects when password doesn't match."""
+    token = _register_and_login(username="keepuser", email="keep@test.com", password="KeepMe123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.request("DELETE", "/api/auth/me", headers=headers, json={"password": "WrongPass1"})
+    assert resp.status_code == 403
+    assert "denied" in resp.json()["detail"].lower()
+
+    # User should still exist
+    resp = client.get("/api/auth/me", headers=headers)
+    assert resp.status_code == 200
+
+
+def test_export_my_data():
+    """GET /api/auth/me/export returns all user data."""
+    token = _register_and_login(username="exportuser", email="export@test.com", password="Export123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.get("/api/auth/me/export", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "profile" in data
+    assert data["profile"]["username"] == "exportuser"
+    assert "transactions" in data
+    assert "query_logs" in data
+    assert "cbdc_wallets" in data
+    assert "exported_at" in data

@@ -87,6 +87,13 @@ class CbdcWallet(Base):
     frozen_at = Column(DateTime, nullable=True)
     frozen_by = Column(String(36), nullable=True)
 
+    # Freeze appeal mechanism (psychological safety: users can contest freezes)
+    appeal_status = Column(String(20), nullable=True)
+    # PENDING | UNDER_REVIEW | APPROVED | DENIED | None
+    appeal_reason = Column(Text, nullable=True)
+    appeal_submitted_at = Column(DateTime, nullable=True)
+    auto_unfreeze_date = Column(Date, nullable=True)
+
     # Cryptographic identity
     public_key_hex = Column(String(128), nullable=True)
     key_version = Column(Integer, default=1)
@@ -612,7 +619,7 @@ class CbdcReserveRequirement(Base):
     requirement_id = Column(String(36), unique=True, nullable=False, index=True)
 
     # Which bank
-    bank_wallet_id = Column(String(36), ForeignKey("cbdc_wallets.wallet_id"),
+    bank_wallet_id = Column(String(36), ForeignKey("cbdc_wallets.wallet_id", ondelete="CASCADE"),
                             nullable=False, index=True)
     institution_code = Column(String(20), nullable=False)
     country_code = Column(String(2), nullable=False, index=True)
@@ -668,7 +675,7 @@ class CbdcStandingFacility(Base):
     # LENDING | DEPOSIT | EMERGENCY_LIQUIDITY
 
     # Borrower / depositor
-    bank_wallet_id = Column(String(36), ForeignKey("cbdc_wallets.wallet_id"),
+    bank_wallet_id = Column(String(36), ForeignKey("cbdc_wallets.wallet_id", ondelete="CASCADE"),
                             nullable=False, index=True)
     institution_code = Column(String(20), nullable=False)
 
@@ -781,7 +788,7 @@ class CbdcEligibleCollateral(Base):
     maturity_date = Column(Date, nullable=True)
 
     # Ownership
-    owner_wallet_id = Column(String(36), ForeignKey("cbdc_wallets.wallet_id"),
+    owner_wallet_id = Column(String(36), ForeignKey("cbdc_wallets.wallet_id", ondelete="SET NULL"),
                              nullable=True, index=True)
     is_pledged = Column(Boolean, default=False)  # currently used as collateral
     pledged_to_facility_id = Column(String(36), nullable=True)

@@ -57,7 +57,12 @@ def deduct_credits(
             )
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Insufficient x402 balance",
+            detail={
+                "error": "Insufficient x402 balance",
+                "balance": float(current.x402_balance),
+                "cost": cost,
+                "topup_url": "/api/payment/topup",
+            },
         )
 
     # Re-read the updated balance for the transaction log

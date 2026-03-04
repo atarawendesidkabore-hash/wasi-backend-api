@@ -61,12 +61,18 @@ def _get_rating(score: float) -> str:
     return "CCC"
 
 
+# Maximum effective interest rate cap: 20% (2000 bps) to prevent predatory lending
+MAX_EFFECTIVE_RATE_BPS = 2000
+
 def _rate_premium_bps(rating: str) -> int:
-    """Basis points above base rate per risk rating."""
-    return {
+    """Basis points above base rate per risk rating. Capped so effective rate <= 20%."""
+    premium = {
         "AAA": 50, "AA": 100, "A": 150,
         "BBB": 250, "BB": 400, "B": 600, "CCC": 1000,
     }.get(rating, 1000)
+    # Cap: effective rate = base_rate + premium must not exceed MAX_EFFECTIVE_RATE_BPS
+    base_rate_bps = int(_RF * 10_000)  # risk-free rate in bps
+    return min(premium, MAX_EFFECTIVE_RATE_BPS - base_rate_bps)
 
 
 def _max_recommended_usd(score: float, loan_amount: float) -> float:
@@ -417,6 +423,7 @@ async def get_loan_advisory(
         "indicative_score": result["overall_score"],
         "indicative_rating": result["risk_rating"],
         "indicative_rate_premium_bps": result["rate_premium_bps"],
+        "component_scores": result["component_scores"],
         "risk_factors": risk_factors,
         "advisory_narrative": result["narrative"],
         "bank_review_required": True,
@@ -490,6 +497,14 @@ async def score_dossier(
         "max_recommended_usd": result["max_recommended_usd"],
         "rate_premium_bps": result["rate_premium_bps"],
         "component_scores": result["component_scores"],
+        "score_explanation": (
+            f"Score breakdown — "
+            f"WASI index: {result['component_scores'].get('wasi_component', 0)}/40, "
+            f"Trade balance: {result['component_scores'].get('trade_component', 0)}/20, "
+            f"Procurement: {result['component_scores'].get('procurement_component', 0)}/15, "
+            f"Volatility penalty: {result['component_scores'].get('volatility_penalty', 0)}, "
+            f"Political risk penalty: {result['component_scores'].get('political_risk_penalty', 0)}"
+        ),
         "narrative": result["narrative"],
         "cobol_record": result["cobol_record"],
         "bank_review_required": True,

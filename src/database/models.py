@@ -98,7 +98,7 @@ class WASIComposite(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     period_date = Column(Date, nullable=False, unique=True, index=True)
-    composite_value = Column(Float, nullable=False)
+    composite_value = Column(Numeric(18, 4, asdecimal=False), nullable=False)
 
     # Trend
     mom_change = Column(Float)

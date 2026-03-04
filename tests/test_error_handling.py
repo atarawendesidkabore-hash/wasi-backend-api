@@ -72,8 +72,8 @@ def test_error_request_id_matches_header():
     assert body["request_id"] == header_rid
 
 
-def test_debug_mode_includes_traceback():
-    """In DEBUG mode, error response should include detail and traceback."""
+def test_debug_mode_includes_detail():
+    """In DEBUG mode, error response should include detail but NOT traceback (server-side only)."""
     original = settings.DEBUG
     try:
         settings.DEBUG = True
@@ -82,9 +82,8 @@ def test_debug_mode_includes_traceback():
         body = resp.json()
         assert "detail" in body
         assert "deliberate test crash" in body["detail"]
-        assert "traceback" in body
-        assert isinstance(body["traceback"], list)
-        assert len(body["traceback"]) > 0
+        # Traceback is intentionally logged server-side only, never in HTTP response
+        assert "traceback" not in body
     finally:
         settings.DEBUG = original
 

@@ -4,16 +4,24 @@ eCFA CBDC Settlement Scheduler.
 Scheduled tasks:
   - Domestic settlement: every 15 minutes
   - Cross-border settlement: every 4 hours
+  - Daily limit reset: daily at 00:01 UTC
   - Monetary aggregate snapshot: daily at 23:55 UTC
 """
 import logging
+import threading
+from datetime import date
+
 from src.database.connection import SessionLocal
 
 logger = logging.getLogger(__name__)
+_settlement_lock = threading.Lock()
 
 
 def run_domestic_settlement():
     """Scheduled task: run domestic inter-bank netting every 15 minutes."""
+    if not _settlement_lock.acquire(blocking=False):
+        logger.warning("eCFA settlement: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         from src.engines.cbdc_settlement_engine import CbdcSettlementEngine
@@ -29,6 +37,7 @@ def run_domestic_settlement():
         logger.error("eCFA domestic settlement failed: %s", exc)
     finally:
         db.close()
+        _settlement_lock.release()
 
 
 def run_cross_border_settlement():
@@ -45,6 +54,68 @@ def run_cross_border_settlement():
             )
     except Exception as exc:
         logger.error("eCFA cross-border settlement failed: %s", exc)
+    finally:
+        db.close()
+
+
+def run_daily_limit_reset():
+    """Scheduled task: reset daily spending counters for all eCFA wallets (00:01 UTC)."""
+    db = SessionLocal()
+    try:
+        from src.database.cbdc_models import CbdcWallet
+        today = date.today()
+        count = (
+            db.query(CbdcWallet)
+            .filter(CbdcWallet.daily_reset_date < today)
+            .update({
+                CbdcWallet.daily_spent_ecfa: 0.0,
+                CbdcWallet.daily_reset_date: today,
+            })
+        )
+        db.commit()
+        if count > 0:
+            logger.info("eCFA daily limit reset: %d wallets", count)
+    except Exception as exc:
+        logger.error("eCFA daily limit reset failed: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def run_auto_unfreeze():
+    """Scheduled task: auto-unfreeze wallets past their auto_unfreeze_date (00:02 UTC).
+
+    Wallets frozen for > 30 days with no compliance action are unfrozen automatically.
+    This prevents indefinite account lockout (psychological safety).
+    """
+    db = SessionLocal()
+    try:
+        from src.database.cbdc_models import CbdcWallet
+        today = date.today()
+        count = (
+            db.query(CbdcWallet)
+            .filter(
+                CbdcWallet.status == "frozen",
+                CbdcWallet.auto_unfreeze_date != None,
+                CbdcWallet.auto_unfreeze_date <= today,
+                # Only unfreeze if appeal is NOT actively denied
+                CbdcWallet.appeal_status != "DENIED",
+            )
+            .update({
+                CbdcWallet.status: "active",
+                CbdcWallet.freeze_reason: None,
+                CbdcWallet.frozen_at: None,
+                CbdcWallet.frozen_by: None,
+                CbdcWallet.auto_unfreeze_date: None,
+                CbdcWallet.appeal_status: "APPROVED",
+            })
+        )
+        db.commit()
+        if count > 0:
+            logger.info("eCFA auto-unfreeze: %d wallets unfrozen", count)
+    except Exception as exc:
+        logger.error("eCFA auto-unfreeze failed: %s", exc)
+        db.rollback()
     finally:
         db.close()
 

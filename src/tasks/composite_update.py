@@ -16,6 +16,7 @@ _composite_lock = threading.Lock()
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.interval import IntervalTrigger
+    from apscheduler.triggers.cron import CronTrigger
     _scheduler = AsyncIOScheduler()
     _apscheduler_available = True
 except ImportError:
@@ -160,7 +161,8 @@ def start_scheduler():
     # eCFA CBDC: domestic settlement every 15 minutes
     from src.tasks.cbdc_settlement_task import (
         run_domestic_settlement, run_cross_border_settlement,
-        run_monetary_aggregate_snapshot,
+        run_monetary_aggregate_snapshot, run_daily_limit_reset,
+        run_auto_unfreeze,
     )
     _scheduler.add_job(
         run_domestic_settlement,
@@ -179,6 +181,24 @@ def start_scheduler():
         misfire_grace_time=300,
     )
 
+    # eCFA CBDC: daily spending limit reset at 00:01 UTC
+    _scheduler.add_job(
+        run_daily_limit_reset,
+        trigger=CronTrigger(hour=0, minute=1),
+        id="ecfa_daily_limit_reset",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # eCFA CBDC: auto-unfreeze wallets past their appeal date at 00:02 UTC
+    _scheduler.add_job(
+        run_auto_unfreeze,
+        trigger=CronTrigger(hour=0, minute=2),
+        id="ecfa_auto_unfreeze",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
     # eCFA CBDC: AML compliance sweep every hour
     from src.tasks.cbdc_compliance_task import run_aml_sweep
     _scheduler.add_job(
@@ -190,7 +210,6 @@ def start_scheduler():
     )
 
     # eCFA CBDC: monetary aggregate snapshot daily at 23:55 UTC
-    from apscheduler.triggers.cron import CronTrigger
     _scheduler.add_job(
         run_monetary_aggregate_snapshot,
         trigger=CronTrigger(hour=23, minute=55),

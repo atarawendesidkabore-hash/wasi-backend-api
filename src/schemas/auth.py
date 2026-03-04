@@ -89,3 +89,7 @@ class UserSessionsResponse(BaseModel):
     active_sessions: int
     revoked_count: int
     sessions: list[SessionInfo] = []
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(min_length=1, description="Current password for confirmation")

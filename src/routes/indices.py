@@ -27,8 +27,8 @@ async def get_latest_indices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get the most recent index value for all WASI countries. Costs 1 credit."""
-    deduct_credits(current_user, db, "/api/indices/latest")
+    """Get the most recent index value for all WASI countries. Free (essential endpoint)."""
+    deduct_credits(current_user, db, "/api/indices/latest", cost_multiplier=0.0)
 
     base_query = db.query(CountryIndex.country_id, func.max(CountryIndex.period_date).label("max_date"))
     if quarter:

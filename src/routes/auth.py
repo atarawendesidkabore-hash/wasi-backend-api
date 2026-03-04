@@ -11,6 +11,7 @@ from src.database.models import User, RefreshToken
 from src.schemas.auth import (
     UserRegister, TokenResponse, TokenResponseWithRefresh,
     RefreshRequest, LogoutRequest, UserResponse, UserSessionsResponse,
+    DeleteAccountRequest,
 )
 from src.utils.security import (
     hash_password, verify_password, create_access_token, decode_access_token,
@@ -227,3 +228,158 @@ async def admin_revoke_user_sessions(
 async def get_me(current_user: User = Depends(get_current_user)):
     """Return the authenticated user's profile."""
     return current_user
+
+
+@router.delete("/me", status_code=200)
+async def delete_account(
+    payload: DeleteAccountRequest,
+    token: str = Depends(oauth2_scheme),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """GDPR right-to-erasure: permanently delete the authenticated user's account
+    and all associated data. Requires password re-confirmation. This action is
+    irreversible.
+    """
+    # Verify password before destructive action
+    if not verify_password(payload.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Incorrect password — account deletion denied",
+        )
+
+    uid = current_user.id
+
+    # ── Cascade delete all user-owned records (leaf → root order) ──
+
+    # 1. Alerts (deliveries reference rules, so delete deliveries first)
+    from src.database.alert_models import AlertRule, AlertDelivery
+    db.query(AlertDelivery).filter(AlertDelivery.user_id == uid).delete()
+    db.query(AlertRule).filter(AlertRule.user_id == uid).delete()
+
+    # 2. Auth tokens
+    db.query(RefreshToken).filter(RefreshToken.user_id == uid).delete()
+
+    # 3. Financial logs
+    from src.database.models import X402Transaction, QueryLog, BankDossierScore
+    db.query(X402Transaction).filter(X402Transaction.user_id == uid).delete()
+    db.query(QueryLog).filter(QueryLog.user_id == uid).delete()
+    db.query(BankDossierScore).filter(BankDossierScore.user_id == uid).delete()
+
+    # 4. Forecast scenarios
+    from src.database.forecast_v2_models import ForecastScenario
+    db.query(ForecastScenario).filter(ForecastScenario.user_id == uid).delete()
+
+    # 5. Valuation (results reference targets)
+    from src.database.valuation_models import ValuationTarget, ValuationResult
+    db.query(ValuationResult).filter(ValuationResult.user_id == uid).delete()
+    db.query(ValuationTarget).filter(ValuationTarget.user_id == uid).delete()
+
+    # 6. Reconciliation audit trail — SET NULL (not owned, just reviewer ref)
+    from src.database.reconciliation_models import DataQuarantine
+    db.query(DataQuarantine).filter(
+        DataQuarantine.reviewed_by == uid
+    ).update({DataQuarantine.reviewed_by: None})
+
+    # 7. CBDC wallets and their downstream records
+    from src.database.cbdc_models import (
+        CbdcWallet, CbdcLedgerEntry, CbdcKycRecord, CbdcAmlAlert,
+        CbdcMerchant, CbdcReserveRequirement, CbdcStandingFacility,
+        CbdcEligibleCollateral,
+    )
+    from src.database.cbdc_payment_models import CbdcCrossBorderPayment
+
+    wallet_ids = [
+        w.wallet_id for w in
+        db.query(CbdcWallet.wallet_id).filter(CbdcWallet.user_id == uid).all()
+    ]
+    if wallet_ids:
+        # Delete wallet children first
+        db.query(CbdcLedgerEntry).filter(
+            CbdcLedgerEntry.wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        db.query(CbdcKycRecord).filter(
+            CbdcKycRecord.wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        db.query(CbdcAmlAlert).filter(
+            CbdcAmlAlert.wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        db.query(CbdcMerchant).filter(
+            CbdcMerchant.wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        db.query(CbdcReserveRequirement).filter(
+            CbdcReserveRequirement.bank_wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        db.query(CbdcStandingFacility).filter(
+            CbdcStandingFacility.bank_wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        db.query(CbdcEligibleCollateral).filter(
+            CbdcEligibleCollateral.owner_wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        db.query(CbdcCrossBorderPayment).filter(
+            CbdcCrossBorderPayment.sender_wallet_id.in_(wallet_ids)
+        ).delete(synchronize_session=False)
+        # Delete wallets
+        db.query(CbdcWallet).filter(CbdcWallet.user_id == uid).delete()
+
+    # 8. Delete the user
+    db.query(User).filter(User.id == uid).delete()
+    db.commit()
+
+    # Blacklist the current access token so it can't be reused
+    decoded = decode_access_token(token)
+    jti = decoded.get("jti")
+    if jti:
+        blacklist_jti(jti, decoded.get("exp", 0))
+
+    return {"detail": "Account and all associated data permanently deleted"}
+
+
+@router.get("/me/export")
+async def export_my_data(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """GDPR data portability: export all data associated with the authenticated user."""
+    uid = current_user.id
+
+    from src.database.models import X402Transaction, QueryLog, BankDossierScore
+
+    transactions = [
+        {"id": t.id, "type": t.transaction_type, "amount": float(t.amount),
+         "balance_before": float(t.balance_before), "balance_after": float(t.balance_after),
+         "description": t.description, "status": t.status, "created_at": str(t.created_at)}
+        for t in db.query(X402Transaction).filter(X402Transaction.user_id == uid).all()
+    ]
+
+    query_logs = [
+        {"id": q.id, "endpoint": q.endpoint, "method": q.method,
+         "credits_used": float(q.credits_used), "created_at": str(q.created_at)}
+        for q in db.query(QueryLog).filter(QueryLog.user_id == uid).all()
+    ]
+
+    # CBDC wallets
+    from src.database.cbdc_models import CbdcWallet
+    wallets = [
+        {"wallet_id": w.wallet_id, "wallet_type": w.wallet_type,
+         "country_code": w.country_code, "status": w.status,
+         "balance_ecfa": float(w.balance_ecfa) if w.balance_ecfa else 0.0,
+         "created_at": str(w.created_at)}
+        for w in db.query(CbdcWallet).filter(CbdcWallet.user_id == uid).all()
+    ]
+
+    return {
+        "profile": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "tier": current_user.tier,
+            "x402_balance": float(current_user.x402_balance),
+            "is_active": current_user.is_active,
+            "created_at": str(current_user.created_at),
+        },
+        "transactions": transactions,
+        "query_logs": query_logs,
+        "cbdc_wallets": wallets,
+        "exported_at": str(datetime.now(timezone.utc)),
+    }

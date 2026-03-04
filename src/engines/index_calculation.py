@@ -33,8 +33,11 @@ class IndexCalculationEngine:
 
     def _normalize(self, value: float, key: str, invert: bool = False) -> float:
         ref = self.NORMALIZATION[key]
+        span = ref["max"] - ref["min"]
+        if span == 0:
+            return 50.0
         clamped = max(ref["min"], min(ref["max"], value))
-        score = ((clamped - ref["min"]) / (ref["max"] - ref["min"])) * 100.0
+        score = ((clamped - ref["min"]) / span) * 100.0
         return 100.0 - score if invert else score
 
     def calculate_shipping_score(self, data: Dict[str, Any]) -> float:

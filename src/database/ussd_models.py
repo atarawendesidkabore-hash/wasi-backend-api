@@ -53,7 +53,7 @@ class USSDSession(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String(100), unique=True, nullable=False, index=True)
     provider_id = Column(Integer, ForeignKey("ussd_providers.id"), nullable=False, index=True)
-    phone_hash = Column(String(64), nullable=False, index=True)  # SHA-256 of MSISDN (privacy)
+    phone_hash = Column(String(64), nullable=False, index=True)  # HMAC-SHA256 of MSISDN (keyed with SECRET_KEY)
     country_code = Column(String(2), nullable=False, index=True)
 
     # Session flow
