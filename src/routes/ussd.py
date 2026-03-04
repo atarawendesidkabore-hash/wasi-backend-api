@@ -18,8 +18,6 @@ Endpoints:
     POST /api/v2/ussd/providers             — Register MNO provider
     GET  /api/v2/ussd/providers             — List providers
 """
-from __future__ import annotations
-
 import hashlib
 import logging
 from datetime import date, datetime, timedelta
@@ -51,6 +49,7 @@ from src.utils.periods import parse_quarter
 from src.engines.ussd_engine import USSDMenuEngine, USSDDataAggregator, _to_usd
 from src.utils.security import get_current_user, require_admin
 from src.utils.credits import deduct_credits
+from src.utils.pagination import PaginationParams, paginate
 
 logger = logging.getLogger(__name__)
 
@@ -427,10 +426,11 @@ async def trigger_aggregation(
     return run_ussd_aggregation(db)
 
 
-@router.get("/commodity/{country_code}", response_model=list[CommodityReportResponse])
+@router.get("/commodity/{country_code}")
 async def get_commodity_reports(
     country_code: str = Path(pattern="^[A-Za-z]{2}$"),
     days: int = Query(default=7, ge=1, le=90),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -442,21 +442,22 @@ async def get_commodity_reports(
         raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
 
     cutoff = date.today() - timedelta(days=days)
-    return (
+    query = (
         db.query(USSDCommodityReport)
         .filter(
             USSDCommodityReport.country_id == country.id,
             USSDCommodityReport.period_date >= cutoff,
         )
         .order_by(USSDCommodityReport.period_date.desc())
-        .all()
     )
+    return paginate(query, pagination)
 
 
-@router.get("/trade/{country_code}", response_model=list[TradeDeclarationResponse])
+@router.get("/trade/{country_code}")
 async def get_trade_declarations(
     country_code: str = Path(pattern="^[A-Za-z]{2}$"),
     days: int = Query(default=7, ge=1, le=90),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -468,21 +469,22 @@ async def get_trade_declarations(
         raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
 
     cutoff = date.today() - timedelta(days=days)
-    return (
+    query = (
         db.query(USSDTradeDeclaration)
         .filter(
             USSDTradeDeclaration.country_id == country.id,
             USSDTradeDeclaration.period_date >= cutoff,
         )
         .order_by(USSDTradeDeclaration.period_date.desc())
-        .all()
     )
+    return paginate(query, pagination)
 
 
-@router.get("/port/{country_code}", response_model=list[PortClearanceResponse])
+@router.get("/port/{country_code}")
 async def get_port_clearances(
     country_code: str = Path(pattern="^[A-Za-z]{2}$"),
     days: int = Query(default=7, ge=1, le=90),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -494,21 +496,22 @@ async def get_port_clearances(
         raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
 
     cutoff = date.today() - timedelta(days=days)
-    return (
+    query = (
         db.query(USSDPortClearance)
         .filter(
             USSDPortClearance.country_id == country.id,
             USSDPortClearance.period_date >= cutoff,
         )
         .order_by(USSDPortClearance.period_date.desc())
-        .all()
     )
+    return paginate(query, pagination)
 
 
-@router.get("/mobile-money/{country_code}", response_model=list[MobileMoneyFlowResponse])
+@router.get("/mobile-money/{country_code}")
 async def get_mobile_money_flows(
     country_code: str = Path(pattern="^[A-Za-z]{2}$"),
     days: int = Query(default=30, ge=1, le=365),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -520,15 +523,15 @@ async def get_mobile_money_flows(
         raise HTTPException(status_code=404, detail=f"Country {country_code} not found")
 
     cutoff = date.today() - timedelta(days=days)
-    return (
+    query = (
         db.query(USSDMobileMoneyFlow)
         .filter(
             USSDMobileMoneyFlow.country_id == country.id,
             USSDMobileMoneyFlow.period_date >= cutoff,
         )
         .order_by(USSDMobileMoneyFlow.period_date.desc())
-        .all()
     )
+    return paginate(query, pagination)
 
 
 # ── Provider management ───────────────────────────────────────────────

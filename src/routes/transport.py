@@ -12,8 +12,10 @@ Endpoint credit costs:
   GET  /corridor/{corridor_name}     — 1 credit
   GET  /mode-comparison/{country_code} — 2 credits
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func, and_
 from datetime import date
 from typing import Optional, List
@@ -30,6 +32,8 @@ from src.utils.credits import deduct_credits
 from src.utils.periods import parse_quarter
 
 router = APIRouter(prefix="/api/v2/transport", tags=["Transport"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 engine = TransportEngine()
 
@@ -97,7 +101,9 @@ def _compute_transport(db: Session, country: Country) -> dict:
 
 
 @router.get("/latest/{country_code}")
+@limiter.limit("20/minute")
 async def get_transport_latest(
+    request: Request,
     country_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -116,7 +122,9 @@ async def get_transport_latest(
 
 
 @router.get("/history/{country_code}")
+@limiter.limit("20/minute")
 async def get_transport_history(
+    request: Request,
     country_code: str,
     months: int = 6,
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides months."),
@@ -169,7 +177,9 @@ async def get_transport_history(
 
 
 @router.get("/composite")
+@limiter.limit("20/minute")
 async def get_transport_composite_all(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -192,7 +202,9 @@ async def get_transport_composite_all(
 
 
 @router.post("/calculate")
+@limiter.limit("10/minute")
 async def calculate_and_store_transport(
+    request: Request,
     period_date: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -264,7 +276,9 @@ async def calculate_and_store_transport(
 
 
 @router.get("/rail/sitarail")
+@limiter.limit("20/minute")
 async def get_sitarail_metrics(
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """
@@ -308,7 +322,9 @@ async def get_sitarail_metrics(
 
 
 @router.get("/airport/{iata_code}")
+@limiter.limit("20/minute")
 async def get_airport_metrics(
+    request: Request,
     iata_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -357,7 +373,9 @@ async def get_airport_metrics(
 
 
 @router.get("/corridor/{corridor_name}")
+@limiter.limit("20/minute")
 async def get_corridor_metrics(
+    request: Request,
     corridor_name: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -395,7 +413,9 @@ async def get_corridor_metrics(
 
 
 @router.get("/mode-comparison/{country_code}")
+@limiter.limit("20/minute")
 async def get_mode_comparison(
+    request: Request,
     country_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

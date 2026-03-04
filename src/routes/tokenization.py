@@ -13,16 +13,16 @@ Endpoints:
   GET  /api/v3/tokenization/payments/{cc}              — Disbursement history
   POST /api/v3/tokenization/aggregate/calculate        — Trigger aggregation
 """
-from __future__ import annotations
-
 import hashlib
 import hmac
 import logging
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 
 from src.database.connection import get_db
@@ -47,11 +47,14 @@ from src.engines.tokenization_engine import (
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 from src.utils.periods import parse_quarter
+from src.utils.pagination import PaginationParams, paginate
 from src.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v3/tokenization", tags=["Data Tokenization"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Helper ────────────────────────────────────────────────────────────
@@ -66,7 +69,9 @@ def _get_country(db: Session, cc: str) -> Country:
 # ── 1. Dashboard ──────────────────────────────────────────────────────
 
 @router.get("/status", response_model=TokenizationStatusResponse)
+@limiter.limit("20/minute")
 async def tokenization_status(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -124,12 +129,15 @@ async def tokenization_status(
 
 # ── 2. Tokens by country ─────────────────────────────────────────────
 
-@router.get("/tokens/{country_code}", response_model=list[DataTokenResponse])
+@router.get("/tokens/{country_code}")
+@limiter.limit("20/minute")
 async def get_tokens(
+    request: Request,
     country_code: str = Path(..., min_length=2, max_length=2),
     days: int = Query(default=30, ge=1, le=365),
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides days."),
     pillar: Optional[str] = Query(default=None),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -148,18 +156,20 @@ async def get_tokens(
     if pillar:
         q = q.filter(DataToken.pillar == pillar.upper())
 
-    tokens = q.order_by(DataToken.period_date.desc()).limit(500).all()
-    return tokens
+    return paginate(q.order_by(DataToken.period_date.desc()), pagination)
 
 
 # ── 3. Citizen activities ─────────────────────────────────────────────
 
-@router.get("/activities/{country_code}", response_model=list[CitizenActivityResponse])
+@router.get("/activities/{country_code}")
+@limiter.limit("20/minute")
 async def get_activities(
+    request: Request,
     country_code: str = Path(..., min_length=2, max_length=2),
     days: int = Query(default=7, ge=1, le=90),
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides days."),
     activity_type: Optional[str] = Query(default=None),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -178,13 +188,15 @@ async def get_activities(
     if activity_type:
         q = q.filter(DailyActivityDeclaration.activity_type == activity_type.upper())
 
-    return q.order_by(DailyActivityDeclaration.period_date.desc()).limit(500).all()
+    return paginate(q.order_by(DailyActivityDeclaration.period_date.desc()), pagination)
 
 
 # ── 4. Business submission ────────────────────────────────────────────
 
 @router.post("/business/submit")
+@limiter.limit("10/minute")
 async def submit_business_data(
+    request: Request,
     req: BusinessSubmissionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -212,7 +224,9 @@ async def submit_business_data(
 # ── 5. Tax credits by country ────────────────────────────────────────
 
 @router.get("/business/{country_code}/credits")
+@limiter.limit("20/minute")
 async def get_business_credits(
+    request: Request,
     country_code: str = Path(..., min_length=2, max_length=2),
     fiscal_year: int = Query(default=None),
     db: Session = Depends(get_db),
@@ -276,10 +290,13 @@ async def get_business_credits(
 
 # ── 6. Contract milestones ────────────────────────────────────────────
 
-@router.get("/contracts/{country_code}", response_model=list[ContractMilestoneResponse])
+@router.get("/contracts/{country_code}")
+@limiter.limit("20/minute")
 async def get_contracts(
+    request: Request,
     country_code: str = Path(..., min_length=2, max_length=2),
     status: Optional[str] = Query(default=None),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -291,13 +308,15 @@ async def get_contracts(
     if status:
         q = q.filter(ContractMilestone.status == status.lower())
 
-    return q.order_by(ContractMilestone.contract_id, ContractMilestone.milestone_number).all()
+    return paginate(q.order_by(ContractMilestone.contract_id, ContractMilestone.milestone_number), pagination)
 
 
 # ── 7. Milestone verification (FREE) ─────────────────────────────────
 
 @router.post("/contracts/{contract_id}/verify")
+@limiter.limit("10/minute")
 async def verify_milestone(
+    request: Request,
     contract_id: str,
     req: MilestoneVerificationRequest,
     milestone_number: int = Query(default=1, ge=1),
@@ -339,9 +358,12 @@ async def verify_milestone(
 
 # ── 8. Faso Meabo workers ─────────────────────────────────────────────
 
-@router.get("/workers/{country_code}", response_model=list[WorkerResponse])
+@router.get("/workers/{country_code}")
+@limiter.limit("20/minute")
 async def get_workers(
+    request: Request,
     country_code: str = Path(..., min_length=2, max_length=2),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -349,23 +371,21 @@ async def get_workers(
     deduct_credits(current_user, db, "/api/v3/tokenization/workers", cost_multiplier=1.0)
     country = _get_country(db, country_code)
 
-    return (
-        db.query(FasoMeaboWorker)
-        .filter(FasoMeaboWorker.country_id == country.id)
-        .order_by(FasoMeaboWorker.total_days_worked.desc())
-        .limit(500)
-        .all()
-    )
+    q = db.query(FasoMeaboWorker).filter(FasoMeaboWorker.country_id == country.id)
+    return paginate(q.order_by(FasoMeaboWorker.total_days_worked.desc()), pagination)
 
 
 # ── 9. Disbursement history ──────────────────────────────────────────
 
-@router.get("/payments/{country_code}", response_model=list[DisbursementResponse])
+@router.get("/payments/{country_code}")
+@limiter.limit("20/minute")
 async def get_payments(
+    request: Request,
     country_code: str = Path(..., min_length=2, max_length=2),
     days: int = Query(default=30, ge=1, le=365),
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides days."),
     payment_type: Optional[str] = Query(default=None),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -384,13 +404,15 @@ async def get_payments(
     if payment_type:
         q = q.filter(PaymentDisbursement.payment_type == payment_type.upper())
 
-    return q.order_by(PaymentDisbursement.queued_at.desc()).limit(500).all()
+    return paginate(q.order_by(PaymentDisbursement.queued_at.desc()), pagination)
 
 
 # ── 10. Trigger aggregation ──────────────────────────────────────────
 
 @router.post("/aggregate/calculate")
+@limiter.limit("10/minute")
 async def calculate_aggregation(
+    request: Request,
     period_date: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

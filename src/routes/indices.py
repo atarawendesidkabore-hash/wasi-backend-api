@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from datetime import timezone, datetime, date, timedelta
 from typing import Optional
 from src.database.connection import get_db
@@ -10,12 +12,17 @@ from src.schemas.composite import CompositeResponse
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 from src.utils.periods import parse_quarter
+from src.utils.pagination import PaginationParams, paginate
 
 router = APIRouter(prefix="/api/indices", tags=["Indices"])
 
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.get("/latest", response_model=AllIndicesResponse)
+@limiter.limit("30/minute")
 async def get_latest_indices(
+    request: Request,
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, 2026-Q2, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -76,10 +83,13 @@ async def get_latest_indices(
     )
 
 
-@router.get("/history", response_model=list[CompositeResponse])
+@router.get("/history")
+@limiter.limit("30/minute")
 async def get_composite_history(
+    request: Request,
     months: int = Query(default=12, ge=1, le=60),
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc."),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -94,14 +104,16 @@ async def get_composite_history(
         cutoff = date.today() - timedelta(days=months * 31)
         query = query.filter(WASIComposite.period_date >= cutoff)
 
-    composites = query.order_by(WASIComposite.period_date.desc()).all()
-    return composites
+    return paginate(query.order_by(WASIComposite.period_date.desc()), pagination)
 
 
-@router.get("/all", response_model=list[CountryIndexResponse])
+@router.get("/all")
+@limiter.limit("30/minute")
 async def get_all_country_indices(
+    request: Request,
     period_date: date | None = Query(default=None),
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides period_date."),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -110,18 +122,16 @@ async def get_all_country_indices(
 
     if quarter:
         q_start, q_end = parse_quarter(quarter)
-        rows = (
+        query = (
             db.query(CountryIndex)
             .filter(CountryIndex.period_date.between(q_start, q_end))
             .order_by(CountryIndex.period_date.desc())
-            .all()
         )
     else:
         if not period_date:
             period_date = db.query(func.max(CountryIndex.period_date)).scalar()
-        rows = (
+        query = (
             db.query(CountryIndex)
             .filter(CountryIndex.period_date == period_date)
-            .all()
         )
-    return rows
+    return paginate(query, pagination)

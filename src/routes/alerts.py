@@ -17,7 +17,9 @@ Endpoint credit costs:
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -41,13 +43,16 @@ from src.utils.security import get_current_user
 MAX_RULES_PER_USER = 20
 
 router = APIRouter(prefix="/api/v3/alerts", tags=["Alerts & Webhooks"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Rules CRUD ──────────────────────────────────────────────────────
 
 
 @router.post("/rules", response_model=AlertRuleCreateResponse)
+@limiter.limit("20/minute")
 async def create_alert_rule(
+    request: Request,
     body: AlertRuleCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -95,7 +100,9 @@ async def create_alert_rule(
 
 
 @router.get("/rules", response_model=list[AlertRuleResponse])
+@limiter.limit("30/minute")
 async def list_alert_rules(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -110,7 +117,9 @@ async def list_alert_rules(
 
 
 @router.get("/rules/{rule_id}", response_model=AlertRuleResponse)
+@limiter.limit("30/minute")
 async def get_alert_rule(
+    request: Request,
     rule_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -127,7 +136,9 @@ async def get_alert_rule(
 
 
 @router.put("/rules/{rule_id}", response_model=AlertRuleResponse)
+@limiter.limit("30/minute")
 async def update_alert_rule(
+    request: Request,
     rule_id: int,
     body: AlertRuleUpdateRequest,
     db: Session = Depends(get_db),
@@ -166,7 +177,9 @@ async def update_alert_rule(
 
 
 @router.delete("/rules/{rule_id}")
+@limiter.limit("30/minute")
 async def delete_alert_rule(
+    request: Request,
     rule_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -186,7 +199,9 @@ async def delete_alert_rule(
 
 
 @router.post("/rules/{rule_id}/test")
+@limiter.limit("10/minute")
 async def test_alert_rule(
+    request: Request,
     rule_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -210,7 +225,9 @@ async def test_alert_rule(
 
 
 @router.get("/deliveries", response_model=list[AlertDeliveryResponse])
+@limiter.limit("30/minute")
 async def list_deliveries(
+    request: Request,
     rule_id: int | None = Query(None, description="Filter by rule ID"),
     status: str | None = Query(None, description="Filter by status"),
     limit: int = Query(50, ge=1, le=200),
@@ -231,7 +248,9 @@ async def list_deliveries(
 
 
 @router.get("/deliveries/{delivery_id}", response_model=AlertDeliveryDetailResponse)
+@limiter.limit("30/minute")
 async def get_delivery(
+    request: Request,
     delivery_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -251,7 +270,9 @@ async def get_delivery(
 
 
 @router.get("/status", response_model=AlertStatusResponse)
+@limiter.limit("30/minute")
 async def get_alert_status(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

@@ -68,7 +68,9 @@ def test_get_tokens_by_country():
     _topup(token)
     resp = client.get("/api/v3/tokenization/tokens/NG", headers=_auth_header(token))
     assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    data = resp.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
 
 
 def test_get_tokens_invalid_country():
@@ -85,7 +87,9 @@ def test_get_activities():
     _topup(token)
     resp = client.get("/api/v3/tokenization/activities/BF", headers=_auth_header(token))
     assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    data = resp.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
 
 
 # ── 4. Business Data Submission ──────────────────────────────────────
@@ -214,7 +218,9 @@ def test_get_contracts():
         headers=_auth_header(token),
     )
     assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    data = resp.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
 
 
 # ── 7. Milestone Verification (FREE) ─────────────────────────────────
@@ -244,7 +250,9 @@ def test_get_workers():
         headers=_auth_header(token),
     )
     assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    data = resp.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
 
 
 # ── 9. Payments ──────────────────────────────────────────────────────

@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -31,6 +33,7 @@ from src.utils.credits import deduct_credits
 from src.utils.security import get_current_user
 
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
+limiter = Limiter(key_func=get_remote_address)
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -101,7 +104,9 @@ class IntelligenceRequest(BaseModel):
 # ── Raw proxy ─────────────────────────────────────────────────────────────────
 
 @router.post("")
+@limiter.limit("5/minute")
 async def proxy_chat(
+    request: Request,
     payload: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -484,7 +489,9 @@ def _grounding_score(context: str, answer: str) -> float:
 # ── Intelligence endpoint (RAG) ───────────────────────────────────────────────
 
 @router.post("/intelligence")
+@limiter.limit("5/minute")
 async def intelligence_chat(
+    request: Request,
     payload: IntelligenceRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

@@ -1,8 +1,10 @@
 """
 Wallet routes — extends payment with full transaction history, tier info, and upgrade.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from datetime import timezone, datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
@@ -10,8 +12,11 @@ from pydantic import BaseModel, ConfigDict
 from src.database.connection import get_db
 from src.database.models import User, X402Transaction, X402Tier, QueryLog
 from src.utils.security import get_current_user
+from src.utils.pagination import PaginationParams, paginate
 
 router = APIRouter(prefix="/api/wallet", tags=["Wallet"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
@@ -62,7 +67,9 @@ class UsageStats(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/overview", response_model=WalletOverview)
+@limiter.limit("30/minute")
 async def get_wallet_overview(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -98,11 +105,12 @@ async def get_wallet_overview(
     )
 
 
-@router.get("/transactions", response_model=list[TransactionDetail])
+@router.get("/transactions")
+@limiter.limit("30/minute")
 async def get_transaction_history(
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    request: Request,
     transaction_type: Optional[str] = Query(default=None, description="topup | deduct | refund"),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -117,18 +125,13 @@ async def get_transaction_history(
     if transaction_type:
         query = query.filter(X402Transaction.transaction_type == transaction_type)
 
-    records = (
-        query
-        .order_by(X402Transaction.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    return [TransactionDetail.model_validate(r) for r in records]
+    return paginate(query.order_by(X402Transaction.created_at.desc()), pagination)
 
 
 @router.get("/tiers", response_model=list[TierInfo])
+@limiter.limit("30/minute")
 async def list_tiers(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -141,7 +144,9 @@ async def list_tiers(
 
 
 @router.post("/upgrade", response_model=WalletOverview)
+@limiter.limit("20/minute")
 async def upgrade_tier(
+    request: Request,
     tier_name: str = Query(description="Target tier: free | pro | enterprise"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -186,7 +191,9 @@ async def upgrade_tier(
 
 
 @router.get("/usage", response_model=UsageStats)
+@limiter.limit("30/minute")
 async def get_usage_stats(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

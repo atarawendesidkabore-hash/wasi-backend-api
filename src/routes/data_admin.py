@@ -15,21 +15,26 @@ Endpoints for monitoring data quality and triggering manual data refreshes.
 import logging
 from datetime import timezone, datetime, date
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from src.database.connection import get_db
 from src.database.models import User, Country, CountryIndex, MacroIndicator, CommodityPrice
-from src.utils.security import get_current_user
+from src.utils.security import get_current_user, require_admin
 from src.utils.credits import deduct_credits
 from src.utils.periods import parse_quarter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v2/data", tags=["Data Admin"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/status")
+@limiter.limit("30/minute")
 async def get_data_status(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -109,9 +114,11 @@ async def get_data_status(
 
 
 @router.post("/worldbank/refresh")
+@limiter.limit("5/minute")
 async def trigger_worldbank_refresh(
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """
     Manually trigger the World Bank data scraper for all 16 countries.
@@ -137,9 +144,11 @@ async def trigger_worldbank_refresh(
 
 
 @router.post("/imf/refresh")
+@limiter.limit("5/minute")
 async def trigger_imf_refresh(
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """
     Trigger IMF World Economic Outlook scraper for all 16 countries.
@@ -165,9 +174,11 @@ async def trigger_imf_refresh(
 
 
 @router.post("/acled/refresh")
+@limiter.limit("5/minute")
 async def trigger_acled_refresh(
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """
     Trigger ACLED conflict data scraper.
@@ -197,9 +208,11 @@ async def trigger_acled_refresh(
 
 
 @router.post("/comtrade/refresh")
+@limiter.limit("5/minute")
 async def trigger_comtrade_refresh(
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """
     Trigger UN Comtrade bilateral trade flows scraper.
@@ -226,9 +239,11 @@ async def trigger_comtrade_refresh(
 
 
 @router.post("/commodities/refresh")
+@limiter.limit("5/minute")
 async def trigger_commodity_refresh(
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """
     Trigger World Bank Pink Sheet commodity price scraper.
@@ -253,7 +268,9 @@ async def trigger_commodity_refresh(
 
 
 @router.get("/commodities/latest")
+@limiter.limit("30/minute")
 async def get_latest_commodities(
+    request: Request,
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -306,7 +323,9 @@ async def get_latest_commodities(
 
 
 @router.get("/macro/{country_code}")
+@limiter.limit("30/minute")
 async def get_macro_indicators(
+    request: Request,
     country_code: str,
     quarter: Optional[str] = Query(default=None, description="Filter by quarter year: Q1-2026 returns 2026 data. T3-2024 returns 2024 data."),
     db: Session = Depends(get_db),

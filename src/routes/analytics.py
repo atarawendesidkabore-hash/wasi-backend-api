@@ -2,19 +2,23 @@
 Analytics routes — trend analysis, performance metrics, cross-country comparisons.
 All endpoints require authentication and consume credits.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from datetime import date, timedelta
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.database.connection import get_db
 from src.database.models import User, Country, CountryIndex, WASIComposite
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.pagination import PaginationParams, paginate
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Response schemas ─────────────────────────────────────────────────────────
@@ -61,9 +65,12 @@ class CrossCountryComparison(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.get("/trends", response_model=list[TrendPoint])
+@router.get("/trends")
+@limiter.limit("30/minute")
 async def get_composite_trends(
+    request: Request,
     months: int = Query(default=12, ge=1, le=60),
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -74,25 +81,28 @@ async def get_composite_trends(
     deduct_credits(current_user, db, "/api/analytics/trends")
 
     cutoff = date.today() - timedelta(days=months * 31)
-    composites = (
+    query = (
         db.query(WASIComposite)
         .filter(WASIComposite.period_date >= cutoff)
         .order_by(WASIComposite.period_date.asc())
-        .all()
     )
-    return [
+    result = paginate(query, pagination)
+    result["items"] = [
         TrendPoint(
             period_date=c.period_date,
             composite_value=c.composite_value,
             mom_change=c.mom_change,
             trend_direction=c.trend_direction,
         )
-        for c in composites
+        for c in result["items"]
     ]
+    return result
 
 
 @router.get("/stats", response_model=CompositeStats)
+@limiter.limit("30/minute")
 async def get_composite_stats(
+    request: Request,
     months: int = Query(default=12, ge=1, le=60),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -137,7 +147,9 @@ async def get_composite_stats(
 
 
 @router.get("/performance", response_model=list[CountryPerformance])
+@limiter.limit("30/minute")
 async def get_country_performance(
+    request: Request,
     period_date: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -179,7 +191,9 @@ async def get_country_performance(
 
 
 @router.get("/compare", response_model=CrossCountryComparison)
+@limiter.limit("30/minute")
 async def compare_countries(
+    request: Request,
     codes: str = Query(description="Comma-separated ISO-2 country codes, e.g. NG,CI,GH"),
     period_date: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),

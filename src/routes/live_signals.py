@@ -9,14 +9,18 @@ Endpoint credit costs:
   GET  /events                     — 1 credit
   POST /sweep                      — 5 credits (admin trigger)
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from datetime import datetime, timezone
 
+from fastapi import Query as FQuery
 from src.database.connection import get_db
 from src.database.models import User, Country, LiveSignal, NewsEvent
 from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
+from src.utils.pagination import PaginationParams, paginate
 from src.tasks.news_sweep import sweep_news
 
 # ECOWAS v3.0 country codes — only these should appear in signals
@@ -24,9 +28,13 @@ ECOWAS_CODES = {"NG", "CI", "GH", "SN", "BF", "ML", "GN", "BJ", "TG", "NE", "MR"
 
 router = APIRouter(prefix="/api/v2/signals", tags=["Live Signals"])
 
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.get("/live")
+@limiter.limit("20/minute")
 async def get_all_live_signals(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -60,7 +68,9 @@ async def get_all_live_signals(
 
 
 @router.get("/{country_code}/live")
+@limiter.limit("20/minute")
 async def get_country_live_signal(
+    request: Request,
     country_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -116,8 +126,11 @@ async def get_country_live_signal(
 
 
 @router.get("/events")
+@limiter.limit("20/minute")
 async def get_active_events(
+    request: Request,
     event_type: str = None,
+    pagination: PaginationParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -132,29 +145,30 @@ async def get_active_events(
     )
     if event_type:
         q = q.filter(NewsEvent.event_type == event_type.upper())
-    rows = q.order_by(NewsEvent.detected_at.desc()).all()
+    q = q.order_by(NewsEvent.detected_at.desc())
 
-    return {
-        "total": len(rows),
-        "events": [
-            {
-                "id": row.NewsEvent.id,
-                "country_code": row.Country.code,
-                "country_name": row.Country.name,
-                "event_type": row.NewsEvent.event_type,
-                "headline": row.NewsEvent.headline,
-                "magnitude": row.NewsEvent.magnitude,
-                "source_name": row.NewsEvent.source_name,
-                "detected_at": str(row.NewsEvent.detected_at),
-                "expires_at": str(row.NewsEvent.expires_at),
-            }
-            for row in rows
-        ],
-    }
+    result = paginate(q, pagination)
+    result["items"] = [
+        {
+            "id": row.NewsEvent.id,
+            "country_code": row.Country.code,
+            "country_name": row.Country.name,
+            "event_type": row.NewsEvent.event_type,
+            "headline": row.NewsEvent.headline,
+            "magnitude": row.NewsEvent.magnitude,
+            "source_name": row.NewsEvent.source_name,
+            "detected_at": str(row.NewsEvent.detected_at),
+            "expires_at": str(row.NewsEvent.expires_at),
+        }
+        for row in result["items"]
+    ]
+    return result
 
 
 @router.post("/sweep")
+@limiter.limit("10/minute")
 async def trigger_news_sweep(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

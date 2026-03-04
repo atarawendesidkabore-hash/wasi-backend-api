@@ -311,6 +311,26 @@ def start_scheduler():
         misfire_grace_time=60,
     )
 
+    # Data reconciliation every 2 hours
+    from src.tasks.reconciliation_task import run_reconciliation
+    _scheduler.add_job(
+        run_reconciliation,
+        trigger=IntervalTrigger(hours=2),
+        id="run_reconciliation",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # World News Intelligence: daily at 05:00 UTC
+    from src.tasks.world_news_sweep import run_world_news_sweep
+    _scheduler.add_job(
+        run_world_news_sweep,
+        trigger=CronTrigger(hour=5, minute=0),
+        id="world_news_sweep",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     # Token blacklist cleanup every 30 minutes
     from src.utils.security import cleanup_blacklist
     _scheduler.add_job(
@@ -336,7 +356,8 @@ def start_scheduler():
         "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
         "AML 1h, interest daily, reserves daily, facilities 1h, forecast daily 04:00, "
         "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h, "
-        "FX analytics 6h, corridor assessment 6h, alerts 5m, blacklist cleanup 30m, refresh cleanup daily",
+        "FX analytics 6h, corridor assessment 6h, alerts 5m, reconciliation 2h, "
+        "world news daily 05:00, blacklist cleanup 30m, refresh cleanup daily",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )
 

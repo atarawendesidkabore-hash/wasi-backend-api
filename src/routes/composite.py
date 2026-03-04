@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 import numpy as np
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from src.database.connection import get_db
 from src.database.models import User, Country, CountryIndex, WASIComposite
 from src.engines.composite_engine import CompositeEngine
@@ -13,6 +15,7 @@ from datetime import timezone, datetime
 from typing import Optional
 
 router = APIRouter(prefix="/api/composite", tags=["Composite"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _get_latest_country_indices(db: Session):
@@ -40,7 +43,9 @@ def _get_latest_country_indices(db: Session):
 
 
 @router.post("/calculate", response_model=CompositeResponse)
+@limiter.limit("10/minute")
 async def calculate_composite(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -97,7 +102,9 @@ async def calculate_composite(
 
 
 @router.get("/report", response_model=CompositeReport)
+@limiter.limit("20/minute")
 async def get_composite_report(
+    request: Request,
     quarter: Optional[str] = Query(default=None, description="Filter history by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

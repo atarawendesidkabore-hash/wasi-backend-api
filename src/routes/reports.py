@@ -1,8 +1,10 @@
 """
 Reports routes — structured JSON reports for export and consumption by clients.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 from datetime import timezone, date, datetime, timedelta
 from typing import Optional
@@ -15,6 +17,8 @@ from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
@@ -63,7 +67,9 @@ class FullReport(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/executive-summary", response_model=ExecutiveSummary)
+@limiter.limit("20/minute")
 async def get_executive_summary(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -120,7 +126,9 @@ async def get_executive_summary(
 
 
 @router.get("/monthly", response_model=list[MonthlyReportEntry])
+@limiter.limit("20/minute")
 async def get_monthly_report(
+    request: Request,
     months: int = Query(default=12, ge=1, le=60),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -152,7 +160,9 @@ async def get_monthly_report(
 
 
 @router.get("/full", response_model=FullReport)
+@limiter.limit("20/minute")
 async def get_full_report(
+    request: Request,
     months: int = Query(default=12, ge=1, le=60),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

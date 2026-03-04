@@ -9,8 +9,10 @@ Endpoints allow querying:
 
 All endpoints require authentication and consume credits.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 from datetime import timezone, datetime
 from typing import Optional
@@ -22,6 +24,8 @@ from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 
 router = APIRouter(prefix="/api/trade", tags=["Trade"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
@@ -71,7 +75,9 @@ class TradeLeaderboard(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/bilateral", response_model=BilateralQueryResponse)
+@limiter.limit("30/minute")
 async def get_wasi_countries_by_partner(
+    request: Request,
     partner_code: str = Query(description="ISO-2 partner country code, e.g. CH, FR, CN"),
     year: int = Query(default=2022, ge=2015, le=2030),
     db: Session = Depends(get_db),
@@ -138,7 +144,9 @@ async def get_wasi_countries_by_partner(
 
 
 @router.get("/partners/{country_code}", response_model=CountryPartnersResponse)
+@limiter.limit("30/minute")
 async def get_country_trade_partners(
+    request: Request,
     country_code: str,
     year: int = Query(default=2022, ge=2015, le=2030),
     db: Session = Depends(get_db),
@@ -201,7 +209,9 @@ async def get_country_trade_partners(
 
 
 @router.get("/leaderboard", response_model=TradeLeaderboard)
+@limiter.limit("30/minute")
 async def get_trade_leaderboard(
+    request: Request,
     year: int = Query(default=2022, ge=2015, le=2030),
     limit: int = Query(default=15, ge=1, le=50),
     db: Session = Depends(get_db),
@@ -246,7 +256,9 @@ async def get_trade_leaderboard(
 
 
 @router.get("/summary", response_model=dict)
+@limiter.limit("30/minute")
 async def get_trade_summary(
+    request: Request,
     year: int = Query(default=2022, ge=2015, le=2030),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

@@ -1,14 +1,18 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import timezone, datetime
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from src.database.connection import get_db
 
 router = APIRouter(tags=["Health"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/api/health")
-async def health_check(db: Session = Depends(get_db)):
+@limiter.limit("60/minute")
+async def health_check(request: Request, db: Session = Depends(get_db)):
     """Health check endpoint. Returns database connectivity status."""
     db_status = "healthy"
     try:

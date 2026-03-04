@@ -12,15 +12,15 @@ Credit costs:
   GET /api/markets/summary    — 1 credit
   GET /api/markets/divergence — 2 credits
 """
-from __future__ import annotations
-
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.database.connection import get_db
 from src.database.models import Country, CountryIndex, DivergenceSnapshot, StockMarketData, User
@@ -31,8 +31,11 @@ from src.engines.divergence_engine import (
 )
 from src.utils.credits import deduct_credits
 from src.utils.security import get_current_user
+from src.utils.pagination import PaginationParams, paginate
 
 router = APIRouter(prefix="/api/markets", tags=["Markets"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
@@ -119,7 +122,9 @@ def _to_response(row: StockMarketData) -> StockIndexResponse:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/latest", response_model=list[StockIndexResponse])
+@limiter.limit("30/minute")
 async def get_latest_indices(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -158,11 +163,14 @@ async def get_latest_indices(
     return [_to_response(r) for r in rows]
 
 
-@router.get("/history", response_model=list[StockIndexResponse])
+@router.get("/history")
+@limiter.limit("30/minute")
 async def get_index_history(
+    request: Request,
     exchange_code: str = Query(..., description="NGX | GSE | BRVM"),
     index_name: Optional[str] = Query(None, description="Filter by specific index name"),
     months: int = Query(12, ge=1, le=60, description="Number of months of history"),
+    pagination=Depends(PaginationParams),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -182,18 +190,15 @@ async def get_index_history(
     if index_name:
         q = q.filter(StockMarketData.index_name == index_name)
 
-    rows = q.order_by(StockMarketData.trade_date.asc()).all()
-    if not rows:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No data for exchange '{exchange_code}' in the last {months} months.",
-        )
-
-    return [_to_response(r) for r in rows]
+    result = paginate(q.order_by(StockMarketData.trade_date.asc()), pagination)
+    result["items"] = [_to_response(r) for r in result["items"]]
+    return result
 
 
 @router.get("/summary", response_model=MarketSummaryResponse)
+@limiter.limit("30/minute")
 async def get_market_summary(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -240,7 +245,9 @@ async def get_market_summary(
 
 
 @router.get("/divergence", response_model=list[DivergenceResponse])
+@limiter.limit("30/minute")
 async def get_divergence(
+    request: Request,
     lookback_months: int = Query(
         3, ge=1, le=24,
         description="Number of months to compute stock vs fundamentals change",
@@ -392,11 +399,14 @@ class DivergenceSnapshotResponse(BaseModel):
     liquidity_flag:          bool
 
 
-@router.get("/divergence/history", response_model=list[DivergenceSnapshotResponse])
+@router.get("/divergence/history")
+@limiter.limit("30/minute")
 async def get_divergence_history(
+    request: Request,
     exchange_code: str = Query(..., description="NGX | GSE | BRVM"),
     index_name: Optional[str] = Query(None),
     months: int = Query(6, ge=1, le=24),
+    pagination=Depends(PaginationParams),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -419,15 +429,8 @@ async def get_divergence_history(
     if index_name:
         q = q.filter(DivergenceSnapshot.index_name == index_name)
 
-    rows = q.order_by(DivergenceSnapshot.snapshot_date.asc()).all()
-    if not rows:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No divergence history for {exchange_code} in the last {months} months. "
-                   f"Snapshots are written daily — check back after the next pipeline run.",
-        )
-
-    return [
+    result = paginate(q.order_by(DivergenceSnapshot.snapshot_date.asc()), pagination)
+    result["items"] = [
         DivergenceSnapshotResponse(
             snapshot_date=r.snapshot_date,
             exchange_code=r.exchange_code,
@@ -440,5 +443,6 @@ async def get_divergence_history(
             signal=r.signal,
             liquidity_flag=r.liquidity_flag,
         )
-        for r in rows
+        for r in result["items"]
     ]
+    return result

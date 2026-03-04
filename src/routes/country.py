@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date, timedelta
 from typing import Optional
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from src.database.connection import get_db
 from src.database.models import User, Country, CountryIndex
 from src.schemas.index import CountryIndexResponse
@@ -11,10 +13,13 @@ from src.utils.credits import deduct_credits
 from src.utils.periods import parse_quarter
 
 router = APIRouter(prefix="/api/country", tags=["Country"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/{country_code}/index", response_model=CountryIndexResponse)
+@limiter.limit("30/minute")
 async def get_country_index(
+    request: Request,
     country_code: str = Path(pattern="^[A-Za-z]{2}$"),
     period_date: date | None = Query(default=None),
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides period_date."),
@@ -55,7 +60,9 @@ async def get_country_index(
 
 
 @router.get("/{country_code}/history", response_model=list[CountryIndexResponse])
+@limiter.limit("20/minute")
 async def get_country_history(
+    request: Request,
     country_code: str = Path(pattern="^[A-Za-z]{2}$"),
     months: int = Query(default=12, ge=1, le=60),
     quarter: Optional[str] = Query(default=None, description="Filter by quarter: Q1-2026, T3-2025, etc. Overrides months."),

@@ -6,8 +6,10 @@ Endpoint credit costs:
   GET  /credit-score/{country_code} — 3 credits
   GET  /credit-score/all            — 5 credits
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from typing import Optional
 
 from src.database.connection import get_db
@@ -17,6 +19,8 @@ from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 
 router = APIRouter(prefix="/api/v2/ml", tags=["ML"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 _engine = WASIMLEngine()
 
@@ -61,7 +65,9 @@ def _build_score(country: Country, data: dict) -> dict:
 
 
 @router.get("/credit-score/all")
+@limiter.limit("20/minute")
 async def get_ml_credit_scores_all(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -89,7 +95,9 @@ async def get_ml_credit_scores_all(
 
 
 @router.get("/credit-score/{country_code}")
+@limiter.limit("20/minute")
 async def get_ml_credit_score(
+    request: Request,
     country_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

@@ -6,8 +6,10 @@ Data sources: Laws.Africa API, IPU Parline, RSS keyword detection.
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.database.connection import get_db
 from src.database.models import User, Country
@@ -24,6 +26,8 @@ from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 
 router = APIRouter(prefix="/api/v3/legislative", tags=["Legislative Monitoring"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 ECOWAS_CODES = [
     "NG", "CI", "GH", "SN", "BF", "ML", "GN", "BJ",
@@ -69,8 +73,11 @@ def _act_to_response(act: LegislativeAct, country_code: str, country_name: str) 
 # Fixed route order: static paths (/latest, /summary, /refresh) BEFORE dynamic /{country_code}
 
 @router.get("/latest", response_model=list[LegislativeActResponse])
+@limiter.limit("20/minute")
 def get_latest_legislation(
+    request: Request,
     limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -82,6 +89,7 @@ def get_latest_legislation(
         .join(Country, LegislativeAct.country_id == Country.id)
         .filter(LegislativeAct.is_active == True)
         .order_by(LegislativeAct.act_date.desc())
+        .offset(offset)
         .limit(limit)
         .all()
     )
@@ -92,7 +100,9 @@ def get_latest_legislation(
 # ── GET /api/v3/legislative/summary ───────────────────────────────────────────
 
 @router.get("/summary", response_model=ECOWASLegislativeSummary)
+@limiter.limit("20/minute")
 def get_ecowas_legislative_summary(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -106,7 +116,9 @@ def get_ecowas_legislative_summary(
 # ── POST /api/v3/legislative/refresh ──────────────────────────────────────────
 
 @router.post("/refresh", response_model=LegislativeRefreshResponse)
+@limiter.limit("10/minute")
 def refresh_legislation(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -139,7 +151,9 @@ def refresh_legislation(
 # ── GET /api/v3/legislative/{country_code} ────────────────────────────────────
 
 @router.get("/{country_code}", response_model=list[LegislativeActResponse])
+@limiter.limit("20/minute")
 def get_country_legislation(
+    request: Request,
     country_code: str,
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -173,7 +187,9 @@ def get_country_legislation(
 # ── GET /api/v3/legislative/{country_code}/impact ─────────────────────────────
 
 @router.get("/{country_code}/impact", response_model=LegislativeImpactResponse)
+@limiter.limit("20/minute")
 def get_country_legislative_impact(
+    request: Request,
     country_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

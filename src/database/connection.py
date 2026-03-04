@@ -44,4 +44,6 @@ def init_db():
     import src.database.fx_models  # noqa: register FX analytics tables
     import src.database.corridor_models  # noqa: register trade corridor tables
     import src.database.alert_models  # noqa: register alert/webhook tables
+    import src.database.reconciliation_models  # noqa: register data integrity tables
+    import src.database.world_news_models  # noqa: register world news intelligence tables
     Base.metadata.create_all(bind=engine)

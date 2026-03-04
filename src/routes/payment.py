@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from src.database.connection import get_db
 from src.database.models import User, X402Transaction
 from src.schemas.payment import TopupRequest, PaymentStatusResponse, TransactionResponse
@@ -7,9 +9,13 @@ from src.utils.security import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/payment", tags=["Payment"])
 
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post("/topup", response_model=PaymentStatusResponse)
+@limiter.limit("20/minute")
 async def topup_credits(
+    request: Request,
     payload: TopupRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
@@ -47,7 +53,9 @@ async def topup_credits(
 
 
 @router.get("/status", response_model=PaymentStatusResponse)
+@limiter.limit("30/minute")
 async def get_payment_status(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

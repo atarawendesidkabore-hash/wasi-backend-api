@@ -2,8 +2,10 @@
 Signals routes — bullish/bearish signals derived from composite, country indices,
 and stock market divergence analysis.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func, and_
 from datetime import date, timedelta
 from typing import Optional
@@ -16,6 +18,8 @@ from src.utils.security import get_current_user
 from src.utils.credits import deduct_credits
 
 router = APIRouter(prefix="/api/signals", tags=["Signals"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Signal classification logic ───────────────────────────────────────────────
@@ -127,7 +131,9 @@ class SignalSummary(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/composite", response_model=CompositeSignal)
+@limiter.limit("30/minute")
 async def get_composite_signal(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -162,7 +168,9 @@ async def get_composite_signal(
 
 
 @router.get("/countries", response_model=list[CountrySignal])
+@limiter.limit("30/minute")
 async def get_country_signals(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -216,7 +224,9 @@ async def get_country_signals(
 
 
 @router.get("/summary", response_model=SignalSummary)
+@limiter.limit("30/minute")
 async def get_signal_summary(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -332,7 +342,9 @@ class MarketDivergenceSummary(BaseModel):
 
 
 @router.get("/market-divergence", response_model=MarketDivergenceSummary)
+@limiter.limit("30/minute")
 async def get_market_divergence(
+    request: Request,
     lookback_months: int = Query(3, ge=1, le=24),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

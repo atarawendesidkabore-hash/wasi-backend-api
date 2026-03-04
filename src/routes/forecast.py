@@ -10,9 +10,11 @@ import logging
 from datetime import timezone, date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.database.connection import get_db
 from src.database.models import (
@@ -33,6 +35,8 @@ from src.tasks.forecast_task import run_forecast_update, _persist_forecast
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v3/forecast", tags=["Forecast"])
+
+limiter = Limiter(key_func=get_remote_address)
 
 _engine = ForecastEngine()
 
@@ -131,7 +135,9 @@ def _build_response(result: dict) -> ForecastResponse:
 # ── Endpoints ────────────────────────────────────────────────────
 
 @router.get("/composite", response_model=ForecastResponse)
+@limiter.limit("20/minute")
 async def forecast_composite(
+    request: Request,
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
     quarter: Optional[str] = Query(default=None, description="Filter forecast periods by quarter: Q1-2026, T3-2025, etc."),
     db: Session = Depends(get_db),
@@ -164,7 +170,9 @@ async def forecast_composite(
 
 
 @router.get("/summary", response_model=ForecastSummaryResponse)
+@limiter.limit("20/minute")
 async def forecast_summary(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -246,7 +254,9 @@ async def forecast_summary(
 
 
 @router.post("/refresh", response_model=ForecastRefreshResponse)
+@limiter.limit("10/minute")
 async def refresh_forecasts(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -267,7 +277,9 @@ async def refresh_forecasts(
 
 
 @router.get("/commodity/{commodity_code}", response_model=ForecastResponse)
+@limiter.limit("20/minute")
 async def forecast_commodity(
+    request: Request,
     commodity_code: str,
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
     quarter: Optional[str] = Query(default=None, description="Filter forecast periods by quarter: Q1-2026, T3-2025, etc."),
@@ -309,7 +321,9 @@ async def forecast_commodity(
 
 
 @router.get("/{country_code}/index", response_model=ForecastResponse)
+@limiter.limit("20/minute")
 async def forecast_country_index(
+    request: Request,
     country_code: str,
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
     quarter: Optional[str] = Query(default=None, description="Filter forecast periods by quarter: Q1-2026, T3-2025, etc."),
@@ -350,7 +364,9 @@ async def forecast_country_index(
 
 
 @router.get("/{country_code}/macro", response_model=ForecastResponse)
+@limiter.limit("20/minute")
 async def forecast_macro(
+    request: Request,
     country_code: str,
     indicator: str = Query(default="gdp_growth", description="gdp_growth or inflation"),
     horizon: int = Query(default=2, description="Forecast horizon in years (1 or 2)"),
@@ -399,7 +415,9 @@ async def forecast_macro(
 
 
 @router.get("/stock/{exchange_code}", response_model=ForecastResponse)
+@limiter.limit("20/minute")
 async def forecast_stock_market(
+    request: Request,
     exchange_code: str,
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
     db: Session = Depends(get_db),
@@ -448,7 +466,9 @@ async def forecast_stock_market(
 
 
 @router.get("/ecfa/{country_code}/{aggregate}", response_model=ForecastResponse)
+@limiter.limit("20/minute")
 async def forecast_ecfa_monetary(
+    request: Request,
     country_code: str,
     aggregate: str,
     horizon: int = Query(default=6, description="Forecast horizon in months (3, 6, or 12)"),
