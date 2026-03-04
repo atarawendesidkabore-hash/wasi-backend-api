@@ -46,6 +46,7 @@ from src.routes.legislative import router as legislative_router
 from src.routes.valuation import router as valuation_router
 from src.routes.fx import router as fx_router
 from src.routes.corridor import router as corridor_router
+from src.routes.alerts import router as alerts_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -492,6 +493,7 @@ app.include_router(legislative_router)
 app.include_router(valuation_router)
 app.include_router(fx_router)
 app.include_router(corridor_router)
+app.include_router(alerts_router)
 
 
 @app.get("/", tags=["Root"])

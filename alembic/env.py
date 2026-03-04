@@ -16,6 +16,7 @@ import src.database.valuation_models      # noqa
 import src.database.legislative_models    # noqa
 import src.database.fx_models             # noqa
 import src.database.corridor_models       # noqa
+import src.database.alert_models          # noqa
 
 target_metadata = Base.metadata
 

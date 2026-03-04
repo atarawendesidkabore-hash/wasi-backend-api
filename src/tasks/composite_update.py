@@ -301,6 +301,16 @@ def start_scheduler():
         misfire_grace_time=300,
     )
 
+    # Alert evaluation: every 5 minutes
+    from src.tasks.alert_evaluation import run_alert_evaluation
+    _scheduler.add_job(
+        run_alert_evaluation,
+        trigger=IntervalTrigger(minutes=5),
+        id="alert_evaluation",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+
     # Token blacklist cleanup every 30 minutes
     from src.utils.security import cleanup_blacklist
     _scheduler.add_job(
@@ -326,7 +336,7 @@ def start_scheduler():
         "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
         "AML 1h, interest daily, reserves daily, facilities 1h, forecast daily 04:00, "
         "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h, "
-        "FX analytics 6h, corridor assessment 6h, blacklist cleanup 30m, refresh cleanup daily",
+        "FX analytics 6h, corridor assessment 6h, alerts 5m, blacklist cleanup 30m, refresh cleanup daily",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )
 
