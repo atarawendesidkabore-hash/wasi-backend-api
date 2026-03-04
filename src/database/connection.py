@@ -46,4 +46,5 @@ def init_db():
     import src.database.alert_models  # noqa: register alert/webhook tables
     import src.database.reconciliation_models  # noqa: register data integrity tables
     import src.database.world_news_models  # noqa: register world news intelligence tables
+    import src.database.forecast_v2_models  # noqa: register forecast v2 tables
     Base.metadata.create_all(bind=engine)

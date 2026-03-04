@@ -106,6 +106,8 @@ ussd_limiter.enabled = False
 wallet_limiter.enabled = False
 from src.routes.world_news import limiter as world_news_limiter
 world_news_limiter.enabled = False
+from src.routes.forecast_v4 import limiter as forecast_v4_limiter
+forecast_v4_limiter.enabled = False
 
 
 @pytest.fixture(autouse=True)

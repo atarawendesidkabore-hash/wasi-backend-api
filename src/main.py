@@ -51,6 +51,7 @@ from src.routes.corridor import router as corridor_router
 from src.routes.alerts import router as alerts_router
 from src.routes.reconciliation import router as reconciliation_router
 from src.routes.world_news import router as world_news_router
+from src.routes.forecast_v4 import router as forecast_v4_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -514,6 +515,7 @@ app.include_router(corridor_router)
 app.include_router(alerts_router)
 app.include_router(reconciliation_router)
 app.include_router(world_news_router)
+app.include_router(forecast_v4_router)
 
 
 @app.get("/", tags=["Root"])
