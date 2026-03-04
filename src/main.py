@@ -49,6 +49,8 @@ from src.routes.valuation import router as valuation_router
 from src.routes.fx import router as fx_router
 from src.routes.corridor import router as corridor_router
 from src.routes.alerts import router as alerts_router
+from src.routes.reconciliation import router as reconciliation_router
+from src.routes.world_news import router as world_news_router
 from src.tasks.data_ingestion import ingest_all_csv_files
 from src.tasks.composite_update import start_scheduler, stop_scheduler
 from src.tasks.bceao_ingestion import ingest_bceao_data
@@ -68,6 +70,11 @@ async def lifespan(app: FastAPI):
 
     # Initialize database tables
     init_db()
+
+    if settings.LIGHT_STARTUP:
+        logger.info("LIGHT_STARTUP=True — skipping all seeding/bootstrap for fast startup")
+        yield
+        return
 
     # Seed reference data
     db = SessionLocal()
@@ -410,6 +417,13 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("Corridor bootstrap failed (non-fatal): %s", exc)
 
+        # ── Data integrity bootstrap ─────────────────────────────────
+        try:
+            from src.engines.reconciliation_engine import seed_source_health
+            seed_source_health(db)
+        except Exception as exc:
+            logger.warning("Integrity bootstrap failed (non-fatal): %s", exc)
+
     finally:
         db.close()
 
@@ -498,6 +512,8 @@ app.include_router(valuation_router)
 app.include_router(fx_router)
 app.include_router(corridor_router)
 app.include_router(alerts_router)
+app.include_router(reconciliation_router)
+app.include_router(world_news_router)
 
 
 @app.get("/", tags=["Root"])
