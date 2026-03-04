@@ -7,7 +7,7 @@ data into unified corridor scores for 10 ECOWAS trade routes.
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -31,7 +31,7 @@ VALID_HISTORY_DAYS = {7, 14, 30, 60, 90}
 @router.get("/")
 @limiter.limit("30/minute")
 def list_corridors(
-    request=None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -50,7 +50,7 @@ def list_corridors(
 @router.get("/dashboard")
 @limiter.limit("30/minute")
 def corridor_dashboard(
-    request=None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -65,7 +65,7 @@ def corridor_dashboard(
 @router.get("/ranking")
 @limiter.limit("30/minute")
 def corridor_ranking(
-    request=None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -84,8 +84,8 @@ def corridor_ranking(
 @router.get("/compare")
 @limiter.limit("30/minute")
 def corridor_comparison(
+    request: Request,
     codes: str = Query(..., description="Comma-separated corridor codes"),
-    request=None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -108,7 +108,7 @@ def corridor_comparison(
 @router.post("/refresh")
 @limiter.limit("5/minute")
 def refresh_corridors(
-    request=None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -129,7 +129,7 @@ def refresh_corridors(
 @limiter.limit("30/minute")
 def corridor_detail(
     corridor_code: str,
-    request=None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -150,7 +150,7 @@ def corridor_detail(
 @limiter.limit("30/minute")
 def corridor_bottleneck(
     corridor_code: str,
-    request=None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -170,9 +170,9 @@ def corridor_bottleneck(
 @router.get("/{corridor_code}/history")
 @limiter.limit("30/minute")
 def corridor_history(
+    request: Request,
     corridor_code: str,
     days: int = Query(default=30),
-    request=None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):

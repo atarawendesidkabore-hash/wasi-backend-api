@@ -311,12 +311,9 @@ async def get_credit_context(
         .first()
     )
 
-    total_export = sum(r.export_value_usd for r in
-                       db.query(BilateralTrade).filter(BilateralTrade.country_id == country.id).all()
-                       if r.export_value_usd)
-    total_import = sum(r.import_value_usd for r in
-                       db.query(BilateralTrade).filter(BilateralTrade.country_id == country.id).all()
-                       if r.import_value_usd)
+    _trades = db.query(BilateralTrade).filter(BilateralTrade.country_id == country.id).all()
+    total_export = sum(r.export_value_usd for r in _trades if r.export_value_usd)
+    total_import = sum(r.import_value_usd for r in _trades if r.import_value_usd)
 
     # Compute indicative score server-side (same formula as score-dossier)
     _quick = _score_dossier(

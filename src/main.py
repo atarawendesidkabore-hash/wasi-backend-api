@@ -15,6 +15,8 @@ from src.config import settings
 from src.database.connection import init_db, SessionLocal
 from src.database.seed import seed_countries, seed_bilateral_trade, seed_stock_market_data
 from src.middleware.x402_payment_verification import RequestLoggingMiddleware
+from src.middleware.request_id import RequestIdMiddleware
+from src.middleware.error_handler import GlobalErrorHandlerMiddleware
 from src.routes.health import router as health_router
 from src.routes.auth import router as auth_router
 from src.routes.indices import router as indices_router
@@ -460,6 +462,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(GlobalErrorHandlerMiddleware)
+app.add_middleware(RequestIdMiddleware)
 
 # Register all routers
 app.include_router(health_router)

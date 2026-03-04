@@ -4,6 +4,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from src.middleware.request_id import request_id_var
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,8 +20,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
         response = await call_next(request)
         duration_ms = (time.perf_counter() - start) * 1000
+        rid = request_id_var.get("")
         logger.info(
-            "%s %s -> %d (%.1fms)",
+            "[%s] %s %s -> %d (%.1fms)",
+            rid,
             request.method,
             request.url.path,
             response.status_code,
