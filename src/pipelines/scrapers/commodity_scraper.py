@@ -81,10 +81,12 @@ def _fetch_commodity_price(wb_indicator: str, months: int = 12) -> List[Dict]:
             "frequency": "M",   # monthly
         }
         try:
-            resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+            from src.pipelines.scrapers.resilience import resilient_get
+            resp = resilient_get("commodity", url, params=params, timeout=REQUEST_TIMEOUT)
+            if resp is None:
+                continue
             if resp.status_code in (400, 404):
                 continue
-            resp.raise_for_status()
             payload = resp.json()
 
             if not isinstance(payload, list) or len(payload) < 2 or not payload[1]:

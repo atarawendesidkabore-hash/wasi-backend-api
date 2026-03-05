@@ -15,6 +15,10 @@ from src.database.connection import SessionLocal
 
 logger = logging.getLogger(__name__)
 _settlement_lock = threading.Lock()
+_cross_border_lock = threading.Lock()
+_daily_limit_lock = threading.Lock()
+_auto_unfreeze_lock = threading.Lock()
+_monetary_agg_lock = threading.Lock()
 
 
 def run_domestic_settlement():
@@ -42,6 +46,9 @@ def run_domestic_settlement():
 
 def run_cross_border_settlement():
     """Scheduled task: run cross-border WAEMU netting every 4 hours."""
+    if not _cross_border_lock.acquire(blocking=False):
+        logger.info("eCFA cross-border settlement: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         from src.engines.cbdc_settlement_engine import CbdcSettlementEngine
@@ -56,10 +63,14 @@ def run_cross_border_settlement():
         logger.error("eCFA cross-border settlement failed: %s", exc)
     finally:
         db.close()
+        _cross_border_lock.release()
 
 
 def run_daily_limit_reset():
     """Scheduled task: reset daily spending counters for all eCFA wallets (00:01 UTC)."""
+    if not _daily_limit_lock.acquire(blocking=False):
+        logger.info("eCFA daily limit reset: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         from src.database.cbdc_models import CbdcWallet
@@ -80,6 +91,7 @@ def run_daily_limit_reset():
         db.rollback()
     finally:
         db.close()
+        _daily_limit_lock.release()
 
 
 def run_auto_unfreeze():
@@ -88,6 +100,9 @@ def run_auto_unfreeze():
     Wallets frozen for > 30 days with no compliance action are unfrozen automatically.
     This prevents indefinite account lockout (psychological safety).
     """
+    if not _auto_unfreeze_lock.acquire(blocking=False):
+        logger.info("eCFA auto-unfreeze: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         from src.database.cbdc_models import CbdcWallet
@@ -118,10 +133,14 @@ def run_auto_unfreeze():
         db.rollback()
     finally:
         db.close()
+        _auto_unfreeze_lock.release()
 
 
 def run_monetary_aggregate_snapshot():
     """Scheduled task: compute daily monetary aggregates for all WAEMU countries."""
+    if not _monetary_agg_lock.acquire(blocking=False):
+        logger.info("eCFA monetary aggregates: previous run still in progress, skipping")
+        return
     waemu_codes = ["CI", "SN", "ML", "BF", "BJ", "TG", "NE", "GW"]
     db = SessionLocal()
     try:
@@ -137,3 +156,4 @@ def run_monetary_aggregate_snapshot():
         logger.error("eCFA monetary aggregate snapshot failed: %s", exc)
     finally:
         db.close()
+        _monetary_agg_lock.release()

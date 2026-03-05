@@ -128,10 +128,12 @@ def _fetch_aggregate(reporter_code: int, year: int, api_key: Optional[str] = Non
         params["subscription-key"] = api_key
 
     try:
-        resp = requests.get(url, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        from src.pipelines.scrapers.resilience import resilient_get
+        resp = resilient_get("comtrade", url, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        if resp is None:
+            return None
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
         payload = resp.json()
         data = payload.get("data", [])
         if not data:

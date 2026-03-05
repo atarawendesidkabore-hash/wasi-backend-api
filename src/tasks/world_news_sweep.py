@@ -16,6 +16,7 @@ Steps:
 """
 import json
 import logging
+import threading
 from datetime import datetime, timedelta, timezone, date
 
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ from src.engines.world_news_engine import (
 )
 
 logger = logging.getLogger(__name__)
+_world_news_lock = threading.Lock()
 
 
 def _fetch_rss_entries(feed_url: str) -> list:
@@ -223,6 +225,9 @@ def sweep_world_news(db: Session) -> dict:
 
 def run_world_news_sweep():
     """APScheduler entry point. Creates its own DB session."""
+    if not _world_news_lock.acquire(blocking=False):
+        logger.info("World news sweep: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         result = sweep_world_news(db)
@@ -235,3 +240,4 @@ def run_world_news_sweep():
         logger.error("World news sweep failed: %s", exc, exc_info=True)
     finally:
         db.close()
+        _world_news_lock.release()

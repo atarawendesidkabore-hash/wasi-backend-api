@@ -13,17 +13,22 @@ arrives in real-time and captures intra-day economic activity.
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import timezone, date, datetime
 
 from src.database.connection import SessionLocal
 from src.engines.ussd_engine import USSDDataAggregator
 
 logger = logging.getLogger(__name__)
+_ussd_agg_lock = threading.Lock()
+_route_bridge_lock = threading.Lock()
 
 
 def run_ussd_aggregation(db=None) -> dict:
     """
     Aggregate USSD data across all 16 WASI countries for every date that has data.
+
+    Lock guard: prevents concurrent execution from scheduler + manual API trigger.
 
     Discovers all distinct period_dates in the four USSD tables and runs
     aggregation for each date.  This ensures historical data (e.g. 2025 monthly
@@ -36,6 +41,14 @@ def run_ussd_aggregation(db=None) -> dict:
 
     Returns summary dict.
     """
+    if not _ussd_agg_lock.acquire(blocking=False):
+        logger.info("USSD aggregation: previous run still in progress, skipping")
+        return {
+            "status": "skipped",
+            "reason": "previous run still in progress",
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     from sqlalchemy import union_all, select
     from src.database.ussd_models import (
         USSDMobileMoneyFlow, USSDCommodityReport,
@@ -112,6 +125,7 @@ def run_ussd_aggregation(db=None) -> dict:
     finally:
         if own_session:
             db.close()
+        _ussd_agg_lock.release()
 
 
 def bridge_route_to_road_corridors(db=None) -> dict:
@@ -124,6 +138,10 @@ def bridge_route_to_road_corridors(db=None) -> dict:
       - avg_transit_days = avg of transit_time reports / 24
       - Confidence blended: existing * 0.6 + ussd * 0.4
     """
+    if not _route_bridge_lock.acquire(blocking=False):
+        logger.info("Route-to-corridor bridge: previous run still in progress, skipping")
+        return {"status": "skipped", "corridors_updated": 0}
+
     from collections import defaultdict
     from src.database.ussd_models import USSDRouteReport
     from src.database.models import RoadCorridor, Country
@@ -231,6 +249,7 @@ def bridge_route_to_road_corridors(db=None) -> dict:
     finally:
         if own_session:
             db.close()
+        _route_bridge_lock.release()
 
 
 def seed_ussd_demo_data(db=None) -> int:

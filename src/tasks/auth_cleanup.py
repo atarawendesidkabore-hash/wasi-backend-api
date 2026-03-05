@@ -1,14 +1,19 @@
 """Periodic cleanup of expired refresh tokens."""
 import logging
+import threading
 from datetime import datetime, timezone, timedelta
 from src.database.connection import SessionLocal
 from src.database.models import RefreshToken
 
 logger = logging.getLogger(__name__)
+_auth_cleanup_lock = threading.Lock()
 
 
 async def cleanup_expired_refresh_tokens():
     """Mark expired tokens as revoked, delete tokens revoked >30 days ago."""
+    if not _auth_cleanup_lock.acquire(blocking=False):
+        logger.info("Auth cleanup: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -37,3 +42,4 @@ async def cleanup_expired_refresh_tokens():
         db.rollback()
     finally:
         db.close()
+        _auth_cleanup_lock.release()

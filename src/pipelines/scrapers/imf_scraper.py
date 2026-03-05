@@ -78,8 +78,10 @@ def _fetch_indicator_all_countries(imf_code: str) -> Dict[str, Dict[str, Optiona
     url = f"{IMF_BASE_URL}/{imf_code}"
     params = {"periods": ",".join(_YEARS)}
     try:
-        resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        from src.pipelines.scrapers.resilience import resilient_get
+        resp = resilient_get("imf", url, params=params, timeout=REQUEST_TIMEOUT)
+        if resp is None:
+            return {}
         payload = resp.json()
         # Expected: {"values": {"NGDP_RPCH": {"NGA": {"2022": 3.31, ...}, ...}}}
         return payload.get("values", {}).get(imf_code, {})

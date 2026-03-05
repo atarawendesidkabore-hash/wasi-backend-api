@@ -6,14 +6,21 @@ eCFA CBDC Monetary Policy Scheduled Tasks.
   - Standing facility maturation (hourly)
 """
 import logging
+import threading
 from src.database.connection import SessionLocal
 from src.engines.cbdc_monetary_policy_engine import CbdcMonetaryPolicyEngine
 
 logger = logging.getLogger(__name__)
+_interest_lock = threading.Lock()
+_reserve_lock = threading.Lock()
+_facility_lock = threading.Lock()
 
 
 async def run_daily_interest_accrual():
     """Apply interest and demurrage across all wallets."""
+    if not _interest_lock.acquire(blocking=False):
+        logger.info("Daily interest accrual: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         engine = CbdcMonetaryPolicyEngine(db)
@@ -29,10 +36,14 @@ async def run_daily_interest_accrual():
         db.rollback()
     finally:
         db.close()
+        _interest_lock.release()
 
 
 async def run_reserve_requirement_check():
     """Check reserve compliance for all commercial banks."""
+    if not _reserve_lock.acquire(blocking=False):
+        logger.info("Reserve requirement check: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         engine = CbdcMonetaryPolicyEngine(db)
@@ -49,10 +60,14 @@ async def run_reserve_requirement_check():
         db.rollback()
     finally:
         db.close()
+        _reserve_lock.release()
 
 
 async def run_facility_maturation():
     """Process matured standing facilities."""
+    if not _facility_lock.acquire(blocking=False):
+        logger.info("Facility maturation: previous run still in progress, skipping")
+        return
     db = SessionLocal()
     try:
         engine = CbdcMonetaryPolicyEngine(db)
@@ -68,3 +83,4 @@ async def run_facility_maturation():
         db.rollback()
     finally:
         db.close()
+        _facility_lock.release()

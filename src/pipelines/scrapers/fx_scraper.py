@@ -54,29 +54,31 @@ FALLBACK_RATES_USD = {
 
 def _fetch_fawazahmed0() -> Optional[dict]:
     """Fetch USD-base rates from Fawazahmed0 Currency API."""
+    from src.pipelines.scrapers.resilience import resilient_get
     for url in (PRIMARY_URL, FALLBACK_URL):
-        try:
-            resp = requests.get(url, timeout=REQUEST_TIMEOUT)
-            resp.raise_for_status()
-            data = resp.json()
-            rates = data.get("usd", {})
-            if rates and "eur" in rates:
-                logger.info("fx_scraper: fetched %d rates from %s", len(rates), url)
-                return rates
-        except Exception as exc:
-            logger.warning("fx_scraper: %s failed: %s", url, exc)
+        resp = resilient_get("fx_fawazahmed0", url, timeout=REQUEST_TIMEOUT)
+        if resp is not None:
+            try:
+                data = resp.json()
+                rates = data.get("usd", {})
+                if rates and "eur" in rates:
+                    logger.info("fx_scraper: fetched %d rates from %s", len(rates), url)
+                    return rates
+            except Exception as exc:
+                logger.warning("fx_scraper: parse failed for %s: %s", url, exc)
     return None
 
 
 def _fetch_exchangerate_api() -> Optional[dict]:
     """Fetch USD-base rates from ExchangeRate-API."""
+    from src.pipelines.scrapers.resilience import resilient_get
+    resp = resilient_get("fx_exchangerate", SECONDARY_URL, timeout=REQUEST_TIMEOUT)
+    if resp is None:
+        return None
     try:
-        resp = requests.get(SECONDARY_URL, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
         data = resp.json()
         if data.get("result") == "success":
             raw = data.get("rates", {})
-            # Convert to lowercase keys for consistency
             rates = {k.lower(): v for k, v in raw.items()}
             logger.info("fx_scraper: fetched %d rates from ExchangeRate-API", len(rates))
             return rates

@@ -2,7 +2,7 @@
 # Multi-stage build: slim Python image with gunicorn + uvicorn workers
 # ─────────────────────────────────────────────────────────────────
 
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 # Prevent Python from writing .pyc and enable unbuffered stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,6 +28,9 @@ COPY alembic.ini .
 
 # ── Runtime ──────────────────────────────────────────────────────
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
 # Run migrations then start gunicorn with uvicorn workers
 CMD ["sh", "-c", "alembic upgrade head && gunicorn src.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 120"]

@@ -98,8 +98,10 @@ def _fetch_indicator(wb_code: str, indicator: str, years: int = 5) -> Tuple[Opti
     url = f"{WB_BASE_URL}/country/{wb_code}/indicator/{indicator}"
     params = {"format": "json", "mrv": years, "per_page": years}
     try:
-        resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        from src.pipelines.scrapers.resilience import resilient_get
+        resp = resilient_get("worldbank", url, params=params, timeout=REQUEST_TIMEOUT)
+        if resp is None:
+            return None, None
         payload = resp.json()
         if not isinstance(payload, list) or len(payload) < 2 or not payload[1]:
             return None, None
