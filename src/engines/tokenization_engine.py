@@ -25,6 +25,20 @@ from src.database.tokenization_models import (
 
 logger = logging.getLogger(__name__)
 
+# ── Engagement hooks (Walk15-style gamification) ─────────────────────
+def _record_engagement(db: Session, phone_hash: str, country_code: str,
+                       cfa_earned: float, is_cross_validated: bool = False):
+    """Hook: update wallet, streak, badges, and challenge contribution."""
+    try:
+        from src.engines.engagement_engine import WalletEngine, BadgeEngine, ChallengeEngine
+        wallet = WalletEngine.record_activity(
+            db, phone_hash, country_code, cfa_earned, is_cross_validated,
+        )
+        BadgeEngine.check_and_award(db, phone_hash, wallet)
+        ChallengeEngine.record_contribution_for_user(db, phone_hash)
+    except Exception as exc:
+        logger.debug("Engagement hook skipped: %s", exc)
+
 # ── Payment rates per activity type (CFA) ─────────────────────────────
 ACTIVITY_PAYMENTS_CFA = {
     "FARM_WORK": 100,
@@ -190,6 +204,9 @@ class TokenizationEngine:
         self.db.add(token)
         self.db.commit()
 
+        _record_engagement(self.db, phone_hash, country_code, payment_cfa)
+        self.db.commit()
+
         return {
             "status": "created",
             "declaration_id": decl.id,
@@ -312,6 +329,9 @@ class TokenizationEngine:
         self.db.add(token)
         self.db.commit()
 
+        _record_engagement(self.db, business_phone_hash, country_code, credit_earned)
+        self.db.commit()
+
         return {
             "status": "created",
             "submission_id": sub_id,
@@ -391,6 +411,9 @@ class TokenizationEngine:
             period_date=today,
         )
         self.db.add(token)
+        self.db.commit()
+
+        _record_engagement(self.db, worker_phone_hash, country_code, worker.daily_rate_cfa)
         self.db.commit()
 
         return {
@@ -496,6 +519,12 @@ class TokenizationEngine:
             period_date=date.today(),
         )
         self.db.add(token)
+        self.db.commit()
+
+        # Resolve country_code for engagement hook
+        _ms_country = self.db.query(Country).filter(Country.id == milestone.country_id).first()
+        _ms_cc = _ms_country.code if _ms_country else "NG"
+        _record_engagement(self.db, verifier_phone_hash, _ms_cc, 50)
         self.db.commit()
 
         return {

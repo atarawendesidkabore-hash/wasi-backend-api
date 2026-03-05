@@ -333,6 +333,19 @@ def bootstrap_data_integrity(db: Session):
     seed_source_health(db)
 
 
+def bootstrap_engagement(db: Session):
+    """Seed Walk15-style engagement: badges, rewards, demo wallets."""
+    from src.tasks.engagement_task import seed_engagement_demo_data
+    result = seed_engagement_demo_data(db)
+    logger.info("Engagement bootstrap: %s", result)
+
+
+def bootstrap_royalties(db: Session):
+    """Ensure royalty tables exist (models are auto-created by init_db)."""
+    import src.database.royalty_models  # noqa: ensure tables are created
+    logger.info("Royalty tables ready")
+
+
 # ── Ordered step lists ────────────────────────────────────────────────────────
 
 # Core steps that always run (no network required)
@@ -363,6 +376,8 @@ MODULE_STEPS = [
     bootstrap_fx_analytics,
     bootstrap_corridors,
     bootstrap_data_integrity,
+    bootstrap_engagement,
+    bootstrap_royalties,
 ]
 
 

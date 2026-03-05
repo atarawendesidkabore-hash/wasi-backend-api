@@ -84,7 +84,26 @@ def deduct_credits(
     _log_query(db, user.id, endpoint, method, cost)
     db.commit()
     db.refresh(user)
+
+    # ── Royalty attribution (non-blocking) ──
+    try:
+        from src.engines.royalty_engine import RoyaltyEngine
+        RoyaltyEngine.record_attribution(
+            db, user.id, endpoint, cost,
+            country_code=_extract_country_from_endpoint(endpoint),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+
     return cost
+
+
+def _extract_country_from_endpoint(endpoint: str) -> str | None:
+    """Extract 2-letter country code from endpoint path, if present."""
+    import re
+    match = re.search(r'/([A-Z]{2})(?:/|$)', endpoint)
+    return match.group(1) if match else None
 
 
 def _log_query(db: Session, user_id: int, endpoint: str, method: str, credits: float):

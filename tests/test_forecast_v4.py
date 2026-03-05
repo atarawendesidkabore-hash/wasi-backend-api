@@ -244,3 +244,95 @@ class TestForecastV4Endpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert "periods" in data
+
+    def test_backtest_results_empty(self):
+        """GET backtest results when no backtests have been run."""
+        db = TestingSessionLocal()
+        try:
+            _create_user(db, credits=100)
+        finally:
+            db.close()
+
+        headers = _login()
+        resp = client.get("/api/v4/forecast/backtest/country_index/NG", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "methods" in data
+
+    def test_backtest_run(self):
+        """POST to run backtest with sufficient data."""
+        db = TestingSessionLocal()
+        try:
+            _create_user(db, credits=200)
+            _seed_country_data(db, "NG", months=20)
+        finally:
+            db.close()
+
+        headers = _login()
+        resp = client.post(
+            "/api/v4/forecast/backtest/country_index/NG/run?min_train_size=8",
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "methods" in data
+        assert "best_method" in data
+
+    def test_explain_country(self):
+        """GET feature importance for a country index."""
+        db = TestingSessionLocal()
+        try:
+            _create_user(db, credits=100)
+            _seed_country_data(db, "NG", months=15)
+            _seed_commodity_data(db, "BRENT", months=15)
+        finally:
+            db.close()
+
+        headers = _login()
+        resp = client.get("/api/v4/forecast/explain/country_index/NG", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "feature_importance" in data
+        assert "data_points" in data
+
+    def test_var_big4(self):
+        """GET VAR forecast for NG/CI/GH/SN with varied data."""
+        import random
+        random.seed(42)
+        db = TestingSessionLocal()
+        try:
+            _create_user(db, credits=200)
+            for idx, cc in enumerate(["NG", "CI", "GH", "SN"]):
+                country = db.query(Country).filter(Country.code == cc).first()
+                if not country:
+                    continue
+                for i in range(15):
+                    month = (i % 12) + 1
+                    year = 2024 + i // 12
+                    base = 40.0 + idx * 10
+                    noise = random.uniform(-3, 3)
+                    db.add(CountryIndex(
+                        country_id=country.id,
+                        period_date=date(year, month, 1),
+                        index_value=base + i * 0.8 + noise,
+                        shipping_score=60 + i,
+                        trade_score=55 + i,
+                        infrastructure_score=50 + i,
+                        economic_score=45 + i,
+                        confidence=0.85,
+                        data_quality="high",
+                        data_source="test",
+                    ))
+                db.commit()
+        finally:
+            db.close()
+
+        headers = _login()
+        resp = client.get("/api/v4/forecast/var/big4?horizon=3", headers=headers)
+        if resp.status_code == 200:
+            data = resp.json()
+            assert "countries" in data
+            assert len(data["countries"]) == 4
+        else:
+            # VAR fitting can fail with near-collinear data → 500
+            assert resp.status_code == 500

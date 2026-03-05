@@ -286,7 +286,8 @@ class USSDMenuEngine:
                     "6. eCFA Portefeuille\n"
                     "7. Activité quotidienne\n"
                     "8. Données entreprise\n"
-                    "9. Faso Meabo check-in"
+                    "9. Faso Meabo check-in\n"
+                    "10. Mon Portefeuille Data"
                 )
                 self._log_session(
                     session_id=session_id, provider_code=provider_code,
@@ -322,7 +323,8 @@ class USSDMenuEngine:
                 "6. eCFA Portefeuille\n"
                 "7. Activité quotidienne\n"
                 "8. Données entreprise\n"
-                "9. Faso Meabo check-in"
+                "9. Faso Meabo check-in\n"
+                "10. Mon Portefeuille Data"
             )
             session_type = "MENU"
         elif parts[0] == "0":
@@ -366,6 +368,10 @@ class USSDMenuEngine:
             )
         elif parts[0] == "9":
             response, session_type = self._handle_worker_checkin(
+                parts[1:], country_code, phone_hash
+            )
+        elif parts[0] == "10":
+            response, session_type = self._handle_data_wallet(
                 parts[1:], country_code, phone_hash
             )
         else:
@@ -1363,6 +1369,294 @@ class USSDMenuEngine:
             ), "WORKER_CHECKIN"
         except Exception as exc:
             logger.error("Worker check-in save failed: %s", exc)
+            return "END Erreur technique. Réessayez.", "ERROR"
+
+    # ── Option 10: Mon Portefeuille Data (Walk15-style wallet) ────────
+
+    def _handle_data_wallet(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Option 10: Data wallet — streaks, badges, challenges, impact."""
+        if len(parts) == 0:
+            return (
+                "CON Mon Portefeuille Data\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                "1. Solde & Série\n"
+                "2. Mes Badges\n"
+                "3. Défis Actifs\n"
+                "4. Mon Impact\n"
+                "5. Revenus Passifs\n"
+                "6. Mon Intelligence"
+            ), "DATA_WALLET"
+
+        try:
+            from src.database.engagement_models import (
+                DataWallet, UserBadge, BadgeDefinition,
+                Challenge, ChallengeParticipation, ImpactRecord,
+            )
+
+            if parts[0] == "1":
+                return self._wallet_balance(phone_hash, country_code)
+            elif parts[0] == "2":
+                return self._wallet_badges(phone_hash)
+            elif parts[0] == "3":
+                return self._wallet_challenges(parts[1:], phone_hash, country_code)
+            elif parts[0] == "4":
+                return self._wallet_impact(phone_hash)
+            elif parts[0] == "5":
+                return self._wallet_royalties(phone_hash)
+            elif parts[0] == "6":
+                return self._wallet_intelligence(phone_hash)
+            else:
+                return "END Option invalide.", "ERROR"
+        except Exception as exc:
+            logger.error("Data wallet USSD failed: %s", exc)
+            return "END Erreur technique. Réessayez.", "ERROR"
+
+    def _wallet_balance(
+        self, phone_hash: str, country_code: str
+    ) -> Tuple[str, str]:
+        """Sub-option 1: Balance + streak summary."""
+        from src.database.engagement_models import DataWallet
+        from src.engines.engagement_engine import WalletEngine
+
+        wallet = self.db.query(DataWallet).filter(
+            DataWallet.contributor_phone_hash == phone_hash
+        ).first()
+
+        if not wallet:
+            wallet = WalletEngine.get_or_create_wallet(self.db, phone_hash, country_code)
+            self.db.commit()
+
+        return (
+            f"END Portefeuille Data\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"Rapports: {wallet.total_reports or 0}\n"
+            f"Gagné: {wallet.total_earned_cfa or 0:,.0f} CFA\n"
+            f"Série: {wallet.current_streak or 0} jours\n"
+            f"Record: {wallet.longest_streak or 0} jours\n"
+            f"Réputation: {wallet.reputation_score or 0:.0f}/100\n"
+            f"Niveau: {wallet.tier}\n"
+            f"Multiplicateur: {wallet.current_multiplier or 1:.2f}x"
+        ), "DATA_WALLET"
+
+    def _wallet_badges(self, phone_hash: str) -> Tuple[str, str]:
+        """Sub-option 2: Badge summary."""
+        from src.database.engagement_models import UserBadge, BadgeDefinition, BadgeProgress
+        import json
+
+        # Earned badges
+        earned = (
+            self.db.query(BadgeDefinition)
+            .join(UserBadge, UserBadge.badge_id == BadgeDefinition.id)
+            .filter(UserBadge.contributor_phone_hash == phone_hash)
+            .order_by(BadgeDefinition.sort_order)
+            .limit(5)
+            .all()
+        )
+
+        # In-progress (top 3 closest to completion)
+        in_progress = (
+            self.db.query(BadgeProgress, BadgeDefinition)
+            .join(BadgeDefinition, BadgeProgress.badge_id == BadgeDefinition.id)
+            .filter(
+                BadgeProgress.contributor_phone_hash == phone_hash,
+                BadgeProgress.current_value < BadgeProgress.target_value,
+            )
+            .order_by(
+                (BadgeProgress.target_value - BadgeProgress.current_value).asc()
+            )
+            .limit(3)
+            .all()
+        )
+
+        lines = ["END Mes Badges", "━━━━━━━━━━━━━━━━━━"]
+
+        if earned:
+            for b in earned:
+                lines.append(f"{b.icon_emoji or '✓'} {b.name_fr}")
+        else:
+            lines.append("Aucun badge encore")
+
+        if in_progress:
+            lines.append("─── En cours ───")
+            for bp, bd in in_progress:
+                pct = round(bp.current_value / bp.target_value * 100) if bp.target_value else 0
+                lines.append(f"{bd.icon_emoji or '○'} {bd.name_fr} ({bp.current_value}/{bp.target_value})")
+
+        return "\n".join(lines), "DATA_WALLET"
+
+    def _wallet_challenges(
+        self, parts: list, phone_hash: str, country_code: str
+    ) -> Tuple[str, str]:
+        """Sub-option 3: Active challenges + join."""
+        from src.database.engagement_models import Challenge, ChallengeParticipation
+
+        if len(parts) == 0:
+            # List active challenges
+            challenges = (
+                self.db.query(Challenge)
+                .filter(Challenge.status == "ACTIVE")
+                .limit(3)
+                .all()
+            )
+
+            if not challenges:
+                return "END Aucun défi actif.\nRevenez bientôt!", "DATA_WALLET"
+
+            lines = ["CON Défis Actifs", "━━━━━━━━━━━━━━━━━━"]
+            for i, c in enumerate(challenges, 1):
+                pct = round((c.current_progress / c.goal_target) * 100) if c.goal_target else 0
+                lines.append(f"{i}. {c.title_fr}")
+                lines.append(f"   {c.current_progress}/{c.goal_target} ({pct}%)")
+
+            return "\n".join(lines), "DATA_WALLET"
+
+        # Sub-selection: join challenge
+        if len(parts) == 1:
+            idx = int(parts[0]) - 1
+            challenges = (
+                self.db.query(Challenge)
+                .filter(Challenge.status == "ACTIVE")
+                .limit(3)
+                .all()
+            )
+            if 0 <= idx < len(challenges):
+                c = challenges[idx]
+                # Check if already joined
+                existing = self.db.query(ChallengeParticipation).filter(
+                    ChallengeParticipation.challenge_id == c.id,
+                    ChallengeParticipation.contributor_phone_hash == phone_hash,
+                ).first()
+                if existing:
+                    pct = round((c.current_progress / c.goal_target) * 100) if c.goal_target else 0
+                    return (
+                        f"END {c.title_fr}\n"
+                        f"Progrès: {c.current_progress}/{c.goal_target} ({pct}%)\n"
+                        f"Vos contributions: {existing.contribution_count}\n"
+                        f"Multiplicateur: {c.reward_multiplier}x"
+                    ), "DATA_WALLET"
+                else:
+                    # Join
+                    from src.engines.engagement_engine import ChallengeEngine
+                    try:
+                        ChallengeEngine.join_challenge(self.db, c.id, phone_hash, country_code)
+                        self.db.commit()
+                        return (
+                            f"END Inscrit au défi!\n"
+                            f"{c.title_fr}\n"
+                            f"Multiplicateur: {c.reward_multiplier}x\n"
+                            f"Bonne chance!"
+                        ), "DATA_WALLET"
+                    except ValueError as e:
+                        return f"END {str(e)}", "DATA_WALLET"
+
+            return "END Choix invalide.", "ERROR"
+
+        return "END Erreur de session.", "ERROR"
+
+    def _wallet_impact(self, phone_hash: str) -> Tuple[str, str]:
+        """Sub-option 4: Monthly impact summary."""
+        from src.database.engagement_models import DataWallet, ImpactRecord
+        from datetime import date
+
+        wallet = self.db.query(DataWallet).filter(
+            DataWallet.contributor_phone_hash == phone_hash
+        ).first()
+
+        if not wallet:
+            return "END Aucune activité.\nCommencez par l'option 7!", "DATA_WALLET"
+
+        # Current month
+        today = date.today()
+        month_str = f"{today.year}-{today.month:02d}"
+
+        impact = self.db.query(ImpactRecord).filter(
+            ImpactRecord.contributor_phone_hash == phone_hash,
+            ImpactRecord.period_month == month_str,
+        ).first()
+
+        if impact:
+            return (
+                f"END Mon Impact — {month_str}\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Rapports: {impact.reports_submitted}\n"
+                f"Validés croisés: {impact.cross_validated_count}\n"
+                f"Régions couvertes: {impact.regions_covered}\n"
+                f"Equiv. enquêtes: {impact.formal_surveys_equivalent}\n"
+                f"Valeur estimée: ${impact.estimated_value_usd:.2f}"
+            ), "DATA_WALLET"
+        else:
+            return (
+                f"END Mon Impact — {month_str}\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Rapports total: {wallet.total_reports or 0}\n"
+                f"Validés croisés: {wallet.total_cross_validated or 0}\n"
+                f"(Impact détaillé calculé\n"
+                f"en fin de mois)"
+            ), "DATA_WALLET"
+
+    def _wallet_royalties(self, phone_hash: str) -> Tuple[str, str]:
+        """Sub-option 5: Passive income from data royalties."""
+        from datetime import date
+        try:
+            from src.engines.royalty_engine import RoyaltyEngine
+            from src.database.engagement_models import DataWallet
+
+            wallet = self.db.query(DataWallet).filter(
+                DataWallet.contributor_phone_hash == phone_hash
+            ).first()
+
+            if not wallet:
+                return "END Aucune activité.\nCommencez par l'option 7!", "DATA_WALLET"
+
+            summary = RoyaltyEngine.get_contributor_summary(self.db, phone_hash)
+            today = date.today()
+            month_str = f"{today.year}-{today.month:02d}"
+
+            # Find current month in breakdown
+            current_month_cfa = 0.0
+            current_month_queries = 0
+            for m in summary.get("monthly_breakdown", []):
+                if m["month"] == month_str:
+                    current_month_cfa = m["total_cfa"]
+                    current_month_queries = m["queries_served"]
+                    break
+
+            return (
+                f"END Revenus Données — {month_str}\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Ce mois: {current_month_cfa:,.0f} CFA\n"
+                f"Requêtes servies: {current_month_queries}\n"
+                f"Part moy.: {summary['avg_share_pct']:.2f}%\n"
+                f"Niveau: {wallet.tier} ({wallet.current_multiplier:.1f}x)\n"
+                f"─────────────────\n"
+                f"Total cumulé: {summary['total_royalties_cfa']:,.0f} CFA"
+            ), "DATA_WALLET"
+        except Exception as exc:
+            logger.error("Wallet royalties USSD failed: %s", exc)
+            return "END Erreur technique. Réessayez.", "ERROR"
+
+    def _wallet_intelligence(self, phone_hash: str) -> Tuple[str, str]:
+        """Sub-option 6: Top 3 personalized nudges."""
+        try:
+            from src.engines.intelligence_engine import ContributorIntelligenceEngine
+
+            nudges = ContributorIntelligenceEngine.get_nudges(
+                self.db, phone_hash, locale="fr"
+            )
+
+            lines = ["END Mon Intelligence", "━━━━━━━━━━━━━━━━━━"]
+            if not nudges:
+                lines.append("Aucune suggestion pour le moment.")
+            else:
+                for i, nudge in enumerate(nudges[:3], 1):
+                    msg = nudge["message_fr"][:55]
+                    lines.append(f"{i}. {msg}")
+
+            return "\n".join(lines), "DATA_WALLET"
+        except Exception as exc:
+            logger.error("Wallet intelligence USSD failed: %s", exc)
             return "END Erreur technique. Réessayez.", "ERROR"
 
     # ── Data persistence ──────────────────────────────────────────────

@@ -53,11 +53,12 @@ from src.routes.alerts import router as alerts_router
 from src.routes.reconciliation import router as reconciliation_router
 from src.routes.world_news import router as world_news_router
 from src.routes.forecast_v4 import router as forecast_v4_router
+from src.routes.engagement import router as engagement_router
+from src.routes.royalty import router as royalty_router
+from src.routes.intelligence import router as intelligence_router
 
-logging.basicConfig(
-    level=logging.DEBUG if settings.DEBUG else logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-)
+from src.utils.logging_config import setup_logging
+setup_logging(debug=settings.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -69,11 +70,14 @@ async def lifespan(app: FastAPI):
     if settings.LIGHT_STARTUP:
         logger.info("LIGHT_STARTUP=True — skipping all seeding/bootstrap for fast startup")
     else:
-        db = SessionLocal()
-        try:
-            run_bootstrap(db)
-        finally:
-            db.close()
+        import asyncio
+        def _sync_bootstrap():
+            db = SessionLocal()
+            try:
+                run_bootstrap(db)
+            finally:
+                db.close()
+        await asyncio.to_thread(_sync_bootstrap)
 
     start_scheduler()
     logger.info("Application startup complete. Docs: http://localhost:8000/docs")
@@ -184,6 +188,9 @@ app.include_router(alerts_router)
 app.include_router(reconciliation_router)
 app.include_router(world_news_router)
 app.include_router(forecast_v4_router)
+app.include_router(engagement_router)
+app.include_router(royalty_router)
+app.include_router(intelligence_router)
 
 
 @app.get("/", tags=["Root"])
