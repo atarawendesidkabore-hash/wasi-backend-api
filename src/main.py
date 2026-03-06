@@ -71,7 +71,19 @@ async def lifespan(app: FastAPI):
     init_db()
 
     if settings.LIGHT_STARTUP:
-        logger.info("LIGHT_STARTUP=True — skipping all seeding/bootstrap for fast startup")
+        logger.info("LIGHT_STARTUP=True — skipping full bootstrap")
+        # One-time targeted seed: IMF + commodities (remove after confirmed)
+        import asyncio
+        def _targeted_seed():
+            db = SessionLocal()
+            try:
+                from src.bootstrap import bootstrap_imf, bootstrap_commodities
+                bootstrap_imf(db)
+                bootstrap_commodities(db)
+            finally:
+                db.close()
+        await asyncio.to_thread(_targeted_seed)
+        logger.info("Targeted IMF + commodities seed complete")
     else:
         import asyncio
         def _sync_bootstrap():
@@ -211,7 +223,10 @@ def root():
 
 @app.post("/api/admin/seed", tags=["Admin"])
 async def admin_seed(request: Request):
-    """Run full bootstrap pipeline. Protected by X-Admin-Key header (must match SECRET_KEY)."""
+    """Run full bootstrap pipeline. Locked: requires X-Admin-Key + ADMIN_SEED_ENABLED=true."""
+    import os
+    if os.environ.get("ADMIN_SEED_ENABLED", "").lower() != "true":
+        raise HTTPException(status_code=404, detail="Not Found")
     admin_key = request.headers.get("X-Admin-Key", "")
     if not admin_key or admin_key != settings.SECRET_KEY:
         raise HTTPException(status_code=403, detail="Invalid or missing X-Admin-Key")
