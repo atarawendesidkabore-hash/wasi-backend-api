@@ -71,19 +71,7 @@ async def lifespan(app: FastAPI):
     init_db()
 
     if settings.LIGHT_STARTUP:
-        logger.info("LIGHT_STARTUP=True — skipping full bootstrap")
-        # One-time targeted seed: IMF + commodities (remove after confirmed)
-        import asyncio
-        def _targeted_seed():
-            db = SessionLocal()
-            try:
-                from src.bootstrap import bootstrap_imf, bootstrap_commodities
-                bootstrap_imf(db)
-                bootstrap_commodities(db)
-            finally:
-                db.close()
-        await asyncio.to_thread(_targeted_seed)
-        logger.info("Targeted IMF + commodities seed complete")
+        logger.info("LIGHT_STARTUP=True — skipping all seeding/bootstrap for fast startup")
     else:
         import asyncio
         def _sync_bootstrap():
