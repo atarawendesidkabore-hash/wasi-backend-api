@@ -70,15 +70,17 @@ async def lifespan(app: FastAPI):
     logger.info("Starting WASI Backend API...")
     init_db()
 
-    # Force full bootstrap to populate DB (LIGHT_STARTUP override for initial seed)
-    import asyncio
-    def _sync_bootstrap():
-        db = SessionLocal()
-        try:
-            run_bootstrap(db)
-        finally:
-            db.close()
-    await asyncio.to_thread(_sync_bootstrap)
+    if settings.LIGHT_STARTUP:
+        logger.info("LIGHT_STARTUP=True — skipping all seeding/bootstrap for fast startup")
+    else:
+        import asyncio
+        def _sync_bootstrap():
+            db = SessionLocal()
+            try:
+                run_bootstrap(db)
+            finally:
+                db.close()
+        await asyncio.to_thread(_sync_bootstrap)
 
     start_scheduler()
     logger.info("Application startup complete. Docs: http://localhost:8000/docs")

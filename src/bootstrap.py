@@ -390,8 +390,8 @@ def run_bootstrap(db: Session):
         except Exception as exc:
             logger.warning("%s failed (non-fatal): %s", step.__name__, exc, exc_info=True)
 
-    # Scrapers (force-run for initial seed regardless of SKIP_SCRAPERS)
-    if False and settings.SKIP_SCRAPERS:
+    # Scrapers
+    if settings.SKIP_SCRAPERS:
         logger.info("SKIP_SCRAPERS=True — skipping external API scrapers")
         try:
             bootstrap_ussd_providers_only(db)

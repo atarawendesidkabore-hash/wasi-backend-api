@@ -27,7 +27,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.12.8"
       - key: LIGHT_STARTUP
-        value: "false"
+        value: "true"
       - key: SCHEDULER_ENABLED
         value: "true"
       - key: ANTHROPIC_API_KEY
@@ -39,7 +39,7 @@ services:
       - key: COMTRADE_API_KEY
         sync: false  # optional: UN Comtrade subscription key
       - key: SKIP_SCRAPERS
-        value: "false"  # bootstrap will run all scrapers on next deploy
+        value: "true"  # DB populated; scrapers available via /api/v2/data/ endpoints
 
   - type: web
     name: wasi-frontend
