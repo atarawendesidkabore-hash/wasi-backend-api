@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -207,6 +207,26 @@ def root():
         "docs": "/docs",
         "health": "/api/health",
     }
+
+
+@app.post("/api/admin/seed", tags=["Admin"])
+async def admin_seed(request: Request):
+    """Run full bootstrap pipeline. Protected by X-Admin-Key header (must match SECRET_KEY)."""
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not admin_key or admin_key != settings.SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Admin-Key")
+
+    import asyncio
+
+    def _sync_seed():
+        db = SessionLocal()
+        try:
+            run_bootstrap(db)
+        finally:
+            db.close()
+
+    await asyncio.to_thread(_sync_seed)
+    return {"status": "ok", "message": "Bootstrap pipeline completed"}
 
 
 if __name__ == "__main__":
