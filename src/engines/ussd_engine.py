@@ -287,7 +287,8 @@ class USSDMenuEngine:
                     "7. Activité quotidienne\n"
                     "8. Données entreprise\n"
                     "9. Faso Meabo check-in\n"
-                    "10. Mon Portefeuille Data"
+                    "10. Mon Portefeuille Data\n"
+                    "11. Demande de Pret"
                 )
                 self._log_session(
                     session_id=session_id, provider_code=provider_code,
@@ -324,7 +325,8 @@ class USSDMenuEngine:
                 "7. Activité quotidienne\n"
                 "8. Données entreprise\n"
                 "9. Faso Meabo check-in\n"
-                "10. Mon Portefeuille Data"
+                "10. Mon Portefeuille Data\n"
+                    "11. Demande de Pret"
             )
             session_type = "MENU"
         elif parts[0] == "0":
@@ -372,6 +374,10 @@ class USSDMenuEngine:
             )
         elif parts[0] == "10":
             response, session_type = self._handle_data_wallet(
+                parts[1:], country_code, phone_hash
+            )
+        elif parts[0] == "11":
+            response, session_type = self._handle_loan_application(
                 parts[1:], country_code, phone_hash
             )
         else:
@@ -1887,6 +1893,202 @@ class USSDMenuEngine:
             self.db.add(clearance)
 
         self.db.commit()
+
+
+    # ── Microfinance loan application handler ──────────────────────────
+
+    _LOAN_PRODUCTS_USSD = {
+        "1": ("MICRO", "Micro-pret (50K-3M XOF)"),
+        "2": ("AGRICULTURAL", "Pret agricole (50K-10M XOF)"),
+        "3": ("GROUP_SOLIDARITY", "Pret solidaire (25K-5M XOF)"),
+        "4": ("SME", "Pret PME (3M-50M XOF)"),
+    }
+
+    _LOAN_SECTORS_USSD = {
+        "1": "market_trade",
+        "2": "agriculture",
+        "3": "livestock",
+        "4": "artisan",
+        "5": "transport",
+        "6": "food_processing",
+        "7": "retail",
+        "8": "services",
+    }
+
+    def _handle_loan_application(
+        self, parts: list, country_code: str, phone_hash: str
+    ) -> Tuple[str, str]:
+        """Option 11: Microfinance loan application via USSD."""
+        # Step 0: Select loan product
+        if len(parts) == 0:
+            lines = ["CON Demande de Pret AfriCredit"]
+            lines.append("Choisissez le type:")
+            for k, (_, desc) in self._LOAN_PRODUCTS_USSD.items():
+                lines.append(f"{k}. {desc}")
+            return "\n".join(lines), "LOAN_APP"
+
+        product_key = parts[0]
+        if product_key not in self._LOAN_PRODUCTS_USSD:
+            return "END Type de pret invalide.", "LOAN_APP"
+        product_code, product_name = self._LOAN_PRODUCTS_USSD[product_key]
+
+        # Step 1: Enter amount
+        if len(parts) == 1:
+            from src.database.microloan_models import LOAN_PRODUCTS
+            limits = LOAN_PRODUCTS[product_code]
+            return (
+                f"CON {product_name}\n"
+                f"Min: {limits['min_xof']:,} XOF\n"
+                f"Max: {limits['max_xof']:,} XOF\n"
+                f"Entrez le montant (XOF):"
+            ), "LOAN_APP"
+
+        # Step 2: Validate amount + select sector
+        try:
+            amount = int(parts[1])
+        except ValueError:
+            return "END Montant invalide. Entrez un nombre.", "LOAN_APP"
+
+        from src.database.microloan_models import LOAN_PRODUCTS
+        limits = LOAN_PRODUCTS[product_code]
+        if amount < limits["min_xof"] or amount > limits["max_xof"]:
+            return (
+                f"END Montant hors limite.\n"
+                f"Min: {limits['min_xof']:,} XOF\n"
+                f"Max: {limits['max_xof']:,} XOF"
+            ), "LOAN_APP"
+
+        if len(parts) == 2:
+            lines = ["CON Votre secteur d'activite:"]
+            for k, sector in self._LOAN_SECTORS_USSD.items():
+                lines.append(f"{k}. {sector.replace('_', ' ').title()}")
+            return "\n".join(lines), "LOAN_APP"
+
+        sector_key = parts[2]
+        if sector_key not in self._LOAN_SECTORS_USSD:
+            return "END Secteur invalide.", "LOAN_APP"
+        sector = self._LOAN_SECTORS_USSD[sector_key]
+
+        # Step 3: Enter term (months)
+        if len(parts) == 3:
+            max_term = limits["max_term_months"]
+            return (
+                f"CON Duree du pret (mois):\n"
+                f"Max: {max_term} mois\n"
+                f"Entrez le nombre de mois:"
+            ), "LOAN_APP"
+
+        try:
+            term = int(parts[3])
+        except ValueError:
+            return "END Duree invalide.", "LOAN_APP"
+
+        if term < 1 or term > limits["max_term_months"]:
+            return f"END Duree invalide. Max {limits['max_term_months']} mois.", "LOAN_APP"
+
+        # Step 4: Confirm
+        if len(parts) == 4:
+            rate = {"MICRO": 24.0, "SME": 18.0, "AGRICULTURAL": 15.0, "GROUP_SOLIDARITY": 20.0}
+            annual_rate = rate.get(product_code, 24.0)
+            monthly_rate = annual_rate / 100 / 12
+            if monthly_rate > 0:
+                monthly_payment = int(amount * monthly_rate / (1 - (1 + monthly_rate) ** -term))
+            else:
+                monthly_payment = int(amount / term)
+
+            return (
+                f"CON Recapitulatif:\n"
+                f"Type: {product_code}\n"
+                f"Montant: {amount:,} XOF\n"
+                f"Duree: {term} mois\n"
+                f"Secteur: {sector}\n"
+                f"~Mensualite: {monthly_payment:,} XOF\n"
+                f"Taux: {annual_rate}%/an\n"
+                f"1. Confirmer la demande\n"
+                f"2. Annuler"
+            ), "LOAN_APP"
+
+        # Step 5: Process confirmation
+        confirm = parts[4]
+        if confirm != "1":
+            return "END Demande annulee.", "LOAN_APP"
+
+        try:
+            from src.database.microloan_models import MicrofinanceClient, MicroLoan, MFIAuditLog
+            import json
+            import uuid
+
+            client = (
+                self.db.query(MicrofinanceClient)
+                .filter(MicrofinanceClient.phone_hash == phone_hash)
+                .first()
+            )
+            if not client:
+                client = MicrofinanceClient(
+                    first_name="USSD",
+                    last_name="Client",
+                    phone_hash=phone_hash,
+                    country_code=country_code,
+                    sector=sector,
+                    kyc_level="BASIC",
+                )
+                self.db.add(client)
+                self.db.flush()
+
+            from datetime import date as dt_date
+            today = dt_date.today().strftime("%Y%m%d")
+            short_id = uuid.uuid4().hex[:4].upper()
+            loan_number = f"MFI-{today}-{short_id}"
+
+            rate_map = {"MICRO": 24.0, "SME": 18.0, "AGRICULTURAL": 15.0, "GROUP_SOLIDARITY": 20.0}
+
+            loan = MicroLoan(
+                client_id=client.id,
+                loan_number=loan_number,
+                product_type=product_code,
+                purpose=f"USSD application - {sector}",
+                principal_xof=amount,
+                interest_rate_annual_pct=rate_map.get(product_code, 24.0),
+                interest_method="DECLINING",
+                term_months=term,
+                grace_period_months=3 if product_code == "AGRICULTURAL" else 0,
+                repayment_frequency="MONTHLY",
+                disbursement_method="MOBILE_MONEY",
+                outstanding_balance_xof=amount,
+                status="APPLICATION",
+            )
+            self.db.add(loan)
+            self.db.flush()
+
+            self.db.add(MFIAuditLog(
+                action="LOAN_APPLICATION",
+                entity_type="LOAN",
+                entity_id=loan.id,
+                actor="USSD",
+                details=json.dumps({
+                    "channel": "USSD",
+                    "country": country_code,
+                    "amount_xof": amount,
+                    "product": product_code,
+                    "sector": sector,
+                    "term_months": term,
+                }),
+            ))
+            self.db.commit()
+
+            return (
+                f"END Demande enregistree!\n"
+                f"Ref: {loan_number}\n"
+                f"Montant: {amount:,} XOF\n"
+                f"Statut: EN ATTENTE\n"
+                f"Un agent vous contactera\n"
+                f"sous 48h. Merci!"
+            ), "LOAN_APP"
+
+        except Exception as e:
+            logger.error(f"USSD loan application error: {e}")
+            self.db.rollback()
+            return "END Erreur technique.\nReessayez plus tard.", "ERROR"
 
 
 class USSDDataAggregator:
