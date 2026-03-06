@@ -57,6 +57,8 @@ from src.routes.engagement import router as engagement_router
 from src.routes.royalty import router as royalty_router
 from src.routes.intelligence import router as intelligence_router
 from src.routes.microloan import router as microloan_router
+from src.routes.sovereign import router as sovereign_router
+from src.routes.v1_guardrails import router as v1_guardrails_router
 
 from src.utils.logging_config import setup_logging
 setup_logging(debug=settings.DEBUG)
@@ -193,6 +195,8 @@ app.include_router(engagement_router)
 app.include_router(royalty_router)
 app.include_router(intelligence_router)
 app.include_router(microloan_router)
+app.include_router(sovereign_router)
+app.include_router(v1_guardrails_router)
 
 
 @app.get("/", tags=["Root"])

@@ -11,6 +11,15 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Cached CompositeEngine instance (weights are constant, no need to re-instantiate)
+_cached_engine: CompositeEngine | None = None
+
+def _get_engine() -> CompositeEngine:
+    global _cached_engine
+    if _cached_engine is None:
+        _cached_engine = CompositeEngine()
+    return _cached_engine
+
 # Re-entrance guard: prevents concurrent execution of the same scheduled task
 _composite_lock = threading.Lock()
 
@@ -41,7 +50,7 @@ async def update_composite_index():
 
     db: Session = SessionLocal()
     try:
-        engine = CompositeEngine()
+        engine = _get_engine()
 
         subq = (
             db.query(
@@ -172,7 +181,7 @@ def start_scheduler():
     from src.tasks.news_sweep import run_news_sweep
     _scheduler.add_job(
         _threaded(run_news_sweep),
-        trigger=IntervalTrigger(hours=1),
+        trigger=CronTrigger(minute=10),
         id="news_sweep",
         replace_existing=True,
         misfire_grace_time=120,
@@ -250,7 +259,7 @@ def start_scheduler():
     from src.tasks.cbdc_compliance_task import run_aml_sweep
     _scheduler.add_job(
         _threaded(run_aml_sweep),
-        trigger=IntervalTrigger(hours=1),
+        trigger=CronTrigger(minute=20),
         id="ecfa_aml_sweep",
         replace_existing=True,
         misfire_grace_time=120,
@@ -293,7 +302,7 @@ def start_scheduler():
 
     _scheduler.add_job(
         run_facility_maturation,
-        trigger=IntervalTrigger(hours=1),
+        trigger=CronTrigger(minute=30),
         id="ecfa_facility_maturation",
         replace_existing=True,
         misfire_grace_time=120,
@@ -398,10 +407,10 @@ def start_scheduler():
     from src.tasks.alert_evaluation import run_alert_evaluation
     _scheduler.add_job(
         run_alert_evaluation,
-        trigger=IntervalTrigger(minutes=5),
+        trigger=IntervalTrigger(minutes=15),
         id="alert_evaluation",
         replace_existing=True,
-        misfire_grace_time=60,
+        misfire_grace_time=120,
         max_instances=1,
         jitter=15,
     )
@@ -475,7 +484,7 @@ def start_scheduler():
 
     _scheduler.add_job(
         run_challenge_lifecycle,
-        trigger=IntervalTrigger(hours=1),
+        trigger=CronTrigger(minute=40),
         id="engagement_challenge_lifecycle",
         replace_existing=True,
         misfire_grace_time=120,
@@ -526,7 +535,7 @@ def start_scheduler():
         "Scheduler started: composite %dh, news 1h, USSD 4h, eCFA settlement 15m/4h, "
         "AML 1h, interest daily, reserves daily, facilities 1h, forecast daily 04:00, "
         "FX rates 6h, tokenization 4h, disbursement daily 20:00, legislative 6h, "
-        "FX analytics 6h, corridor assessment 6h, alerts 5m, reconciliation 2h, "
+        "FX analytics 6h, corridor assessment 6h, alerts 15m, reconciliation 2h, "
         "world news daily 05:00, blacklist cleanup 30m, refresh cleanup daily",
         settings.COMPOSITE_UPDATE_INTERVAL_HOURS,
     )

@@ -39,7 +39,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 
 # ── Security: model whitelist and token cap ───────────────────────────────────
 ALLOWED_MODELS = {
-    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-6",
     "claude-sonnet-4-5-20250514",
 }
 MAX_TOKENS_CAP = 2000
@@ -76,7 +76,7 @@ def _check_injection(text: str) -> None:
 def _validate_model(model: str) -> str:
     """Enforce model whitelist — prevent expensive model abuse."""
     if model not in ALLOWED_MODELS:
-        return "claude-haiku-4-5-20251001"  # fall back to cheapest
+        return "claude-sonnet-4-6"  # fall back to default
     return model
 
 
@@ -88,7 +88,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    model: str = "claude-haiku-4-5-20251001"
+    model: str = "claude-sonnet-4-6"
     max_tokens: int = Field(default=1000, le=MAX_TOKENS_CAP)
     system: Optional[str] = None
     messages: list[ChatMessage]
@@ -96,7 +96,7 @@ class ChatRequest(BaseModel):
 
 class IntelligenceRequest(BaseModel):
     question: str
-    model: str = "claude-haiku-4-5-20251001"
+    model: str = "claude-sonnet-4-6"
     max_tokens: int = 1200
     language: str = "en"   # W5: "en" | "fr" — response language
 

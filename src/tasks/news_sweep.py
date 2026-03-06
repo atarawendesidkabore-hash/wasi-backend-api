@@ -390,10 +390,13 @@ def sweep_news(db: Session) -> dict:
     new_events = 0
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # Fetch headlines from all RSS feeds
+    # Fetch headlines from all RSS feeds (parallel)
+    import concurrent.futures
     all_headlines = []
-    for feed_url in RSS_FEEDS:
-        all_headlines.extend(_fetch_rss_headlines(feed_url))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        results = pool.map(_fetch_rss_headlines, RSS_FEEDS)
+    for batch in results:
+        all_headlines.extend(batch)
 
     # Detect and insert events
     for headline in all_headlines:
@@ -442,41 +445,58 @@ def sweep_news(db: Session) -> dict:
 
     # ── Government page scanning — find new PDF/Excel documents ──────────────
     new_docs = 0
-    for country_code, sources in GOVERNMENT_SOURCES.items():
+    # Parallel page scanning (each call includes its own DB check)
+    gov_tasks = [
+        (cc, st, url)
+        for cc, sources in GOVERNMENT_SOURCES.items()
+        for st, url in sources.items()
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {
+            pool.submit(scan_government_page, url, cc, db): (cc, st)
+            for cc, st, url in gov_tasks
+        }
+        gov_results = {}
+        for future in concurrent.futures.as_completed(futures):
+            cc, st = futures[future]
+            try:
+                gov_results[(cc, st)] = future.result()
+            except Exception:
+                gov_results[(cc, st)] = []
+
+    for (country_code, source_type), docs in gov_results.items():
         country = db.query(Country).filter(Country.code == country_code).first()
         if not country:
             continue
-        for source_type, url in sources.items():
-            docs = scan_government_page(url, country_code, db)
-            for doc in docs:
-                inserted = _save_government_doc(db, doc, country)
-                if inserted:
-                    new_docs += 1
-                    # Emit a NEW_GOVERNMENT_DOCUMENT event (neutral magnitude)
-                    evt_type = "NEW_GOVERNMENT_DOCUMENT"
-                    cutoff = now - timedelta(hours=24)
-                    already = (
-                        db.query(NewsEvent)
-                        .filter(
-                            NewsEvent.country_id == country.id,
-                            NewsEvent.event_type == evt_type,
-                            NewsEvent.source_url == doc["url"],
-                            NewsEvent.detected_at >= cutoff,
-                        )
-                        .first()
+        for doc in docs:
+            inserted = _save_government_doc(db, doc, country)
+            if inserted:
+                new_docs += 1
+                # Emit a NEW_GOVERNMENT_DOCUMENT event (neutral magnitude)
+                evt_type = "NEW_GOVERNMENT_DOCUMENT"
+                cutoff = now - timedelta(hours=24)
+                already = (
+                    db.query(NewsEvent)
+                    .filter(
+                        NewsEvent.country_id == country.id,
+                        NewsEvent.event_type == evt_type,
+                        NewsEvent.source_url == doc["url"],
+                        NewsEvent.detected_at >= cutoff,
                     )
-                    if not already:
-                        db.add(NewsEvent(
-                            country_id=country.id,
-                            event_type=evt_type,
-                            headline=f"New document: {doc['title'][:200]}",
-                            source_url=doc["url"],
-                            source_name=f"gov_{source_type}",
-                            magnitude=EVENT_MAGNITUDE[evt_type],
-                            detected_at=now,
-                            expires_at=now + EVENT_LIFETIME[evt_type],
-                            is_active=True,
-                        ))
+                    .first()
+                )
+                if not already:
+                    db.add(NewsEvent(
+                        country_id=country.id,
+                        event_type=evt_type,
+                        headline=f"New document: {doc['title'][:200]}",
+                        source_url=doc["url"],
+                        source_name=f"gov_{source_type}",
+                        magnitude=EVENT_MAGNITUDE[evt_type],
+                        detected_at=now,
+                        expires_at=now + EVENT_LIFETIME[evt_type],
+                        is_active=True,
+                    ))
 
     if new_docs:
         db.commit()

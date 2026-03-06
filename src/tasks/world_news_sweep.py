@@ -110,8 +110,22 @@ def sweep_world_news(db: Session) -> dict:
     cascaded_total = 0
     assessments_total = 0
 
-    for feed_config in GLOBAL_RSS_FEEDS:
-        entries = _fetch_rss_entries(feed_config["url"])
+    # Pre-fetch all RSS feeds in parallel
+    import concurrent.futures
+    feed_entries = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {
+            pool.submit(_fetch_rss_entries, fc["url"]): fc
+            for fc in GLOBAL_RSS_FEEDS
+        }
+        for future in concurrent.futures.as_completed(futures):
+            fc = futures[future]
+            try:
+                feed_entries[fc["name"]] = (fc, future.result())
+            except Exception:
+                feed_entries[fc["name"]] = (fc, [])
+
+    for feed_name, (feed_config, entries) in feed_entries.items():
         logger.debug(
             "Fetched %d entries from %s", len(entries), feed_config["name"]
         )

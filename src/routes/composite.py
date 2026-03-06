@@ -17,6 +17,15 @@ from typing import Optional
 router = APIRouter(prefix="/api/composite", tags=["Composite"])
 limiter = Limiter(key_func=get_remote_address)
 
+# Cached CompositeEngine (weights are constant)
+_cached_engine: CompositeEngine | None = None
+
+def _get_engine() -> CompositeEngine:
+    global _cached_engine
+    if _cached_engine is None:
+        _cached_engine = CompositeEngine()
+    return _cached_engine
+
 
 def _get_latest_country_indices(db: Session):
     """Fetch the most recent index value per country using a subquery."""
@@ -69,11 +78,12 @@ async def calculate_composite(
     history_records = (
         db.query(WASIComposite)
         .order_by(WASIComposite.period_date.asc())
+        .limit(120)
         .all()
     )
     history_values = [r.composite_value for r in history_records]
 
-    engine = CompositeEngine()
+    engine = _get_engine()
     result = engine.calculate_composite(country_indices, period_date, history_values)
 
     exclude_keys = {"period_date", "country_contributions"}
@@ -139,7 +149,7 @@ async def get_composite_report(
 
     # Re-derive contributions from latest country indices
     rows = _get_latest_country_indices(db)
-    engine = CompositeEngine()
+    engine = _get_engine()
     country_indices = {row.Country.code: row.CountryIndex.index_value for row in rows}
     available = {
         code: val for code, val in country_indices.items()
@@ -154,39 +164,47 @@ async def get_composite_report(
     # T6: concentration_warning — flag when any country's effective weight > 25%
     # AND its current index_value is > 2 SD from its own 12-month historical mean.
     concentration_warning: Optional[str] = None
-    for row in rows:
-        code = row.Country.code
-        if code not in available:
-            continue
-        eff_weight = engine.COUNTRY_WEIGHTS[code] / total_w
-        if eff_weight <= 0.25:
-            continue
-        # Fetch last 13 months (current + 12 history) for this country
-        hist_rows = (
+    high_weight = [
+        row for row in rows
+        if row.Country.code in available
+        and engine.COUNTRY_WEIGHTS[row.Country.code] / total_w > 0.25
+    ]
+    if high_weight:
+        # Batch-fetch last 13 months for all high-weight countries in one query
+        hw_ids = [row.Country.id for row in high_weight]
+        from sqlalchemy import case
+        all_hist = (
             db.query(CountryIndex)
-            .filter(CountryIndex.country_id == row.Country.id)
-            .order_by(CountryIndex.period_date.desc())
-            .limit(13)
+            .filter(CountryIndex.country_id.in_(hw_ids))
+            .order_by(CountryIndex.country_id, CountryIndex.period_date.desc())
             .all()
         )
-        hist_vals = [r.index_value for r in hist_rows if r.index_value is not None]
-        if len(hist_vals) < 3:
-            continue
-        # hist_vals[0] is current; rest are history
-        current_val = hist_vals[0]
-        hist_arr = np.array(hist_vals[1:], dtype=float)
-        mean = float(np.mean(hist_arr))
-        std = float(np.std(hist_arr, ddof=1)) if len(hist_arr) > 1 else 0.0
-        if std > 0 and abs(current_val - mean) > 2 * std:
-            sd_dist = abs(current_val - mean) / std
-            direction = "above" if current_val > mean else "below"
-            concentration_warning = (
-                f"{code} carries {eff_weight * 100:.1f}% of composite weight and "
-                f"its index ({current_val:.1f}) is {sd_dist:.1f}σ {direction} its "
-                f"12-month mean ({mean:.1f}). Composite may be distorted by "
-                f"single-country movement."
-            )
-            break  # report the first/most impactful offender
+        # Group by country_id, keep only first 13 per country
+        hist_by_country: dict[int, list] = {}
+        for r in all_hist:
+            lst = hist_by_country.setdefault(r.country_id, [])
+            if len(lst) < 13:
+                lst.append(r.index_value)
+        for row in high_weight:
+            code = row.Country.code
+            eff_weight = engine.COUNTRY_WEIGHTS[code] / total_w
+            hist_vals = [v for v in hist_by_country.get(row.Country.id, []) if v is not None]
+            if len(hist_vals) < 3:
+                continue
+            current_val = hist_vals[0]
+            hist_arr = np.array(hist_vals[1:], dtype=float)
+            mean = float(np.mean(hist_arr))
+            std = float(np.std(hist_arr, ddof=1)) if len(hist_arr) > 1 else 0.0
+            if std > 0 and abs(current_val - mean) > 2 * std:
+                sd_dist = abs(current_val - mean) / std
+                direction = "above" if current_val > mean else "below"
+                concentration_warning = (
+                    f"{code} carries {eff_weight * 100:.1f}% of composite weight and "
+                    f"its index ({current_val:.1f}) is {sd_dist:.1f}σ {direction} its "
+                    f"12-month mean ({mean:.1f}). Composite may be distorted by "
+                    f"single-country movement."
+                )
+                break
 
     return CompositeReport(
         latest=latest,

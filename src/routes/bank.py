@@ -31,6 +31,7 @@ from src.utils.wacc_params import (
     _DEFAULT_WACC_PARAMS, _RF, _ERP,
 )
 from pydantic import BaseModel, Field
+from src.engines.sovereign_veto_engine import check_sovereign_veto
 
 router = APIRouter(prefix="/api/v2/bank", tags=["Bank"])
 limiter = Limiter(key_func=get_remote_address)
@@ -317,9 +318,16 @@ async def get_credit_context(
         .first()
     )
 
-    _trades = db.query(BilateralTrade).filter(BilateralTrade.country_id == country.id).all()
-    total_export = sum(r.export_value_usd for r in _trades if r.export_value_usd)
-    total_import = sum(r.import_value_usd for r in _trades if r.import_value_usd)
+    _trade_sums = (
+        db.query(
+            func.coalesce(func.sum(BilateralTrade.export_value_usd), 0),
+            func.coalesce(func.sum(BilateralTrade.import_value_usd), 0),
+        )
+        .filter(BilateralTrade.country_id == country.id)
+        .one()
+    )
+    total_export = float(_trade_sums[0])
+    total_import = float(_trade_sums[1])
 
     # Compute indicative score server-side (same formula as score-dossier)
     _quick = _score_dossier(
@@ -390,6 +398,10 @@ async def get_loan_advisory(
     cc = _validate_wasi_country(req.country_code)
     deduct_credits(current_user, db, "/api/v2/bank/loan-advisory", cost_multiplier=5.0)
 
+    veto_r = check_sovereign_veto(cc, db, req.loan_amount_usd)
+    if veto_r["blocked"]:
+        raise HTTPException(status_code=403, detail=veto_r["message"])
+
     country = db.query(Country).filter(Country.code == cc).first()
     if not country:
         raise HTTPException(status_code=404, detail=f"Country '{req.country_code}' not found")
@@ -450,6 +462,10 @@ async def score_dossier(
     cc = _validate_wasi_country(req.country_code)
     deduct_credits(current_user, db, "/api/v2/bank/score-dossier", cost_multiplier=10.0)
 
+    veto_r = check_sovereign_veto(cc, db, req.loan_amount_usd)
+    if veto_r["blocked"]:
+        raise HTTPException(status_code=403, detail=veto_r["message"])
+
     country = db.query(Country).filter(Country.code == cc).first()
     if not country:
         raise HTTPException(status_code=404, detail=f"Country '{req.country_code}' not found")
@@ -508,6 +524,7 @@ async def score_dossier(
         "narrative": result["narrative"],
         "cobol_record": result["cobol_record"],
         "bank_review_required": True,
+        "sovereign_veto_status": veto_r,
         "scored_at": str(record.created_at),
     }
 

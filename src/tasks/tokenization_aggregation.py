@@ -64,11 +64,12 @@ def run_tokenization_aggregation(db=None, target_date: date = None) -> dict:
         if target_date:
             all_dates = [target_date]
         else:
-            # Discover all dates with tokenization data
+            # Discover dates with tokenization data (last 7 days only)
+            cutoff = date.today() - timedelta(days=7)
             date_queries = [
-                select(DailyActivityDeclaration.period_date.label("d")),
-                select(BusinessDataSubmission.period_date.label("d")),
-                select(WorkerCheckIn.check_in_date.label("d")),
+                select(DailyActivityDeclaration.period_date.label("d")).where(DailyActivityDeclaration.period_date >= cutoff),
+                select(BusinessDataSubmission.period_date.label("d")).where(BusinessDataSubmission.period_date >= cutoff),
+                select(WorkerCheckIn.check_in_date.label("d")).where(WorkerCheckIn.check_in_date >= cutoff),
             ]
             combined = union_all(*date_queries).subquery()
             all_dates = sorted(

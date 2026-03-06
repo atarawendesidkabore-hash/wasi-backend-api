@@ -448,3 +448,13 @@ def _find_actual_value(db, target_type: str, target_code: str, period_date: date
         return row.price_usd if row else None
 
     return None
+
+
+def run_forecast_v2_update_sync():
+    """Synchronous wrapper for the scheduler (APScheduler can't call async)."""
+    import asyncio
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(run_forecast_v2_update())
+    finally:
+        loop.close()

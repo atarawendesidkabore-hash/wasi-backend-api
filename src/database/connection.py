@@ -6,12 +6,20 @@ from src.config import settings
 connect_args = {}
 if settings.DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
-
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args=connect_args,
-    echo=False,
-)
+    engine = create_engine(
+        settings.DATABASE_URL,
+        connect_args=connect_args,
+        echo=False,
+    )
+else:
+    engine = create_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        pool_size=20,
+        max_overflow=10,
+        pool_recycle=3600,
+        pool_pre_ping=True,
+    )
 
 if settings.DATABASE_URL.startswith("sqlite"):
     @event.listens_for(engine, "connect")
@@ -48,5 +56,6 @@ def init_db():
     import src.database.world_news_models  # noqa: register world news intelligence tables
     import src.database.forecast_v2_models  # noqa: register forecast v2 tables
     import src.database.engagement_models  # noqa: register engagement/gamification tables
-    import src.database.royalty_models  # noqa: register royalty distribution tables
+    import src.database.royalty_models  # noqa
+    import src.database.sovereign_models  # noqa: register sovereign veto tables
     Base.metadata.create_all(bind=engine)

@@ -141,7 +141,7 @@ class X402Transaction(Base):
     reference_id = Column(String(100), unique=True, index=True)
     description = Column(String(255))
     status = Column(String(20), default="completed")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     user = relationship("User", back_populates="transactions")
 
@@ -158,7 +158,7 @@ class QueryLog(Base):
     response_status = Column(Integer)
     response_time_ms = Column(Float)
     ip_address = Column(String(45))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     user = relationship("User", back_populates="query_logs")
 

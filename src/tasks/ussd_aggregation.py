@@ -63,13 +63,15 @@ def run_ussd_aggregation(db=None) -> dict:
     try:
         aggregator = USSDDataAggregator(db)
 
-        # Collect every distinct period_date across all four USSD tables
+        # Collect distinct period_dates from last 7 days (avoid reprocessing all history)
+        from datetime import timedelta
+        cutoff = date.today() - timedelta(days=7)
         q = union_all(
-            select(USSDMobileMoneyFlow.period_date),
-            select(USSDCommodityReport.period_date),
-            select(USSDTradeDeclaration.period_date),
-            select(USSDPortClearance.period_date),
-            select(USSDRouteReport.period_date),
+            select(USSDMobileMoneyFlow.period_date).where(USSDMobileMoneyFlow.period_date >= cutoff),
+            select(USSDCommodityReport.period_date).where(USSDCommodityReport.period_date >= cutoff),
+            select(USSDTradeDeclaration.period_date).where(USSDTradeDeclaration.period_date >= cutoff),
+            select(USSDPortClearance.period_date).where(USSDPortClearance.period_date >= cutoff),
+            select(USSDRouteReport.period_date).where(USSDRouteReport.period_date >= cutoff),
         )
         all_dates = sorted(
             {row[0] for row in db.execute(q).fetchall() if row[0] is not None}

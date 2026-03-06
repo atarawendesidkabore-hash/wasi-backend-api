@@ -111,22 +111,33 @@ def run_badge_check(db=None) -> dict:
         return {"status": "skipped"}
 
     try:
-        wallets = db.query(DataWallet).filter(
-            DataWallet.total_reports > 0
-        ).all()
-
         total_awarded = 0
-        for wallet in wallets:
-            new_badges = BadgeEngine.check_and_award(
-                db, wallet.contributor_phone_hash, wallet
+        total_checked = 0
+        batch_size = 100
+        offset = 0
+        while True:
+            batch = (
+                db.query(DataWallet)
+                .filter(DataWallet.total_reports > 0)
+                .offset(offset)
+                .limit(batch_size)
+                .all()
             )
-            total_awarded += len(new_badges)
+            if not batch:
+                break
+            for wallet in batch:
+                new_badges = BadgeEngine.check_and_award(
+                    db, wallet.contributor_phone_hash, wallet
+                )
+                total_awarded += len(new_badges)
+            total_checked += len(batch)
+            db.commit()
+            offset += batch_size
 
-        db.commit()
-        logger.info(f"Badge check: {len(wallets)} wallets checked, {total_awarded} badges awarded")
+        logger.info(f"Badge check: {total_checked} wallets checked, {total_awarded} badges awarded")
         return {
             "status": "completed",
-            "wallets_checked": len(wallets),
+            "wallets_checked": total_checked,
             "badges_awarded": total_awarded,
         }
     except Exception as exc:
