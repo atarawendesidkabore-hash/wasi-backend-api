@@ -25,7 +25,9 @@ services:
       - key: CORS_ORIGINS
         value: '["https://wasi-frontend.onrender.com","http://localhost:3000"]'
       - key: PYTHON_VERSION
-        value: "3.11.11"
+        value: "3.12.8"
+      - key: LIGHT_STARTUP
+        value: "true"
       - key: SCHEDULER_ENABLED
         value: "true"
       - key: ANTHROPIC_API_KEY
