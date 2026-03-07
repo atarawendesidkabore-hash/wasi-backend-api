@@ -41,6 +41,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 ALLOWED_MODELS = {
     "claude-sonnet-4-6",
     "claude-sonnet-4-5-20250514",
+    "claude-haiku-4-5-20251001",
 }
 MAX_TOKENS_CAP = 2000
 MAX_MESSAGES = 50  # prevent context-stuffing abuse
