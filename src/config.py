@@ -18,6 +18,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "http://localhost:8000",
+        "https://atarawendesidkabore-hash.github.io",
     ]
     SCHEDULER_ENABLED: bool = True
     COMPOSITE_UPDATE_INTERVAL_HOURS: int = 6
