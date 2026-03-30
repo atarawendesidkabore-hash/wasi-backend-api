@@ -60,6 +60,7 @@ from src.routes.microloan import router as microloan_router
 from src.routes.sovereign import router as sovereign_router
 from src.routes.v1_guardrails import router as v1_guardrails_router
 from src.routes.data_truth_routes import router as data_truth_router
+from src.routes.wasi_core import router as wasi_core_router
 
 from src.utils.logging_config import setup_logging
 setup_logging(debug=settings.DEBUG)
@@ -199,6 +200,7 @@ app.include_router(microloan_router)
 app.include_router(sovereign_router)
 app.include_router(v1_guardrails_router)
 app.include_router(data_truth_router)
+app.include_router(wasi_core_router)
 
 
 @app.get("/", tags=["Root"])
