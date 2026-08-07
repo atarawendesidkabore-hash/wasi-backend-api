@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WASI Platform — Connected Intelligence Workspace</title>
+  <meta name="description" content="Unified WASI workspace combining intelligence, DEX, microfinance, and platform operations in one live browser app.">
+  <style>
+    :root {
+      --bg: #06111b;
+      --bg-soft: #0b1b28;
+      --surface: rgba(10, 25, 38, 0.82);
+      --surface-strong: rgba(8, 20, 31, 0.94);
+      --surface-soft: rgba(255, 255, 255, 0.05);
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #edf4fb;
+      --muted: #93aac0;
+      --accent: #4fd1c5;
+      --accent-2: #f0b35b;
+      --success: #49b675;
+      --warning: #df8458;
+      --danger: #ee6c73;
+      --shadow: 0 28px 64px rgba(0, 0, 0, 0.35);
+      --radius: 24px;
+      --radius-sm: 16px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(79, 209, 197, 0.12), transparent 28%),
+        radial-gradient(circle at 85% 14%, rgba(240, 179, 91, 0.16), transparent 20%),
+        linear-gradient(180deg, #08131d 0%, #091723 45%, #06111b 100%);
+    }
+    a { color: inherit; text-decoration: none; }
+    button, input {
+      font: inherit;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(6, 17, 27, 0.82);
+      backdrop-filter: blur(18px);
+    }
+    .brand-block {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .brand span:last-child {
+      color: var(--accent);
+    }
+    .brand-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .brand-copy strong {
+      font-size: 0.95rem;
+    }
+    .brand-copy small {
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+    }
+    .topbar-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .live-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 0 8px rgba(73, 182, 117, 0.14);
+      display: inline-block;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 20px;
+      width: min(1480px, calc(100vw - 32px));
+      margin: 20px auto 32px;
+    }
+    .sidebar {
+      position: sticky;
+      top: 78px;
+      align-self: start;
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .sidebar-panel {
+      padding: 18px;
+    }
+    .sidebar-panel h3,
+    .section-header h2,
+    .card h3,
+    .drawer h3 {
+      margin: 0 0 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .nav-links,
+    .resource-links {
+      display: grid;
+      gap: 8px;
+    }
+    .nav-link,
+    .resource-link {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+    }
+    .nav-link span:last-child,
+    .resource-link span:last-child {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+    .workspace {
+      display: grid;
+      gap: 20px;
+    }
+    .hero {
+      overflow: hidden;
+      padding: 28px;
+      background:
+        linear-gradient(135deg, rgba(79,209,197,0.1), transparent 35%),
+        linear-gradient(135deg, rgba(8,20,31,0.92), rgba(11,27,40,0.95));
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 0.95fr;
+      gap: 20px;
+      align-items: end;
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+    }
+    .hero h1 {
+      margin: 0;
+      max-width: 12ch;
+      font-size: clamp(3rem, 7vw, 5.6rem);
+      line-height: 0.88;
+      letter-spacing: -0.06em;
+    }
+    .hero p {
+      max-width: 60ch;
+      color: var(--muted);
+      font-size: 1.02rem;
+      line-height: 1.6;
+    }
+    .hero-rail {
+      display: grid;
+      gap: 14px;
+    }
+    .hero-card {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .hero-card strong {
+      display: block;
+      font-size: 1.5rem;
+      letter-spacing: -0.04em;
+      margin-top: 6px;
+    }
+    .hero-card small {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.72rem;
+    }
+    .section {
+      padding: 22px;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 16px;
+    }
+    .section-header p {
+      margin: 0;
+      max-width: 58ch;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .kpi-grid,
+    .two-col,
+    .three-col {
+      display: grid;
+      gap: 16px;
+    }
+    .kpi-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .two-col {
+      grid-template-columns: 1.05fr 0.95fr;
+    }
+    .three-col {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .card {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.035);
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .metric-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      margin-bottom: 8px;
+    }
+    .metric-value {
+      font-size: clamp(1.5rem, 2vw, 2.25rem);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+    }
+    .metric-sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .auth-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .auth-grid input {
+      width: 100%;
+      padding: 14px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform .18s ease, opacity .18s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    .primary { background: var(--accent); color: #032427; }
+    .secondary { background: rgba(255,255,255,0.08); color: var(--text); }
+    .warm { background: var(--accent-2); color: #281706; }
+    .status {
+      min-height: 52px;
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-left: 3px solid var(--accent);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .status.success { border-left-color: var(--success); color: #b9ecd0; }
+    .status.error { border-left-color: var(--danger); color: #ffd2d7; }
+    .data-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .data-row {
+      display: grid;
+      gap: 8px;
+      padding: 14px 0;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .data-row:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .row-head,
+    .row-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row-head strong {
+      font-size: 1.02rem;
+    }
+    .row-meta,
+    .row-copy {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(255,255,255,0.06);
+      color: var(--muted);
+    }
+    .pill.good { color: #b9ecd0; background: rgba(73,182,117,0.12); }
+    .pill.warn { color: #ffd7c4; background: rgba(223,132,88,0.12); }
+    .matrix {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .matrix .card {
+      min-height: 160px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(79,209,197,0.12);
+      color: var(--accent);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 10px;
+    }
+    .recommendation {
+      padding: 14px 0;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .recommendation:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .recommendation p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .footer {
+      padding: 16px 22px 26px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.86rem;
+    }
+    @media (max-width: 1180px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: static;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .hero-grid,
+      .two-col,
+      .three-col,
+      .matrix {
+        grid-template-columns: 1fr;
+      }
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 720px) {
+      .topbar {
+        padding: 14px 16px;
+        align-items: start;
+        flex-direction: column;
+      }
+      .layout {
+        width: min(100vw - 18px, 1480px);
+        margin-top: 12px;
+      }
+      .sidebar {
+        grid-template-columns: 1fr;
+      }
+      .hero,
+      .section {
+        padding: 18px;
+      }
+      .auth-grid,
+      .kpi-grid {
+        grid-template-columns: 1fr;
+      }
+      .hero h1 {
+        max-width: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-block">
+      <div class="brand">WASI <span>Platform</span></div>
+      <div class="brand-copy">
+        <strong>Whole African Strategic Intelligence</strong>
+        <small>Intelligence · DEX · Banking · Microfinance</small>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <span><span class="live-dot"></span></span>
+      <span>54 pays</span>
+      <span>XOF settlement rail</span>
+      <span id="clock"></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <section class="panel sidebar-panel">
+        <h3>Workspace</h3>
+        <div class="nav-links">
+          <a class="nav-link" href="#overview"><span>Vue d'ensemble</span><span>00</span></a>
+          <a class="nav-link" href="#access"><span>Acces & demo</span><span>01</span></a>
+          <a class="nav-link" href="#intelligence"><span>Connected intelligence</span><span>02</span></a>
+          <a class="nav-link" href="#ecosystem"><span>Ecosysteme WASI</span><span>03</span></a>
+        </div>
+      </section>
+
+      <section class="panel sidebar-panel">
+        <h3>Reference DNA</h3>
+        <div class="resource-links">
+          <div class="resource-link"><span>WASI DEX desktop</span><span>structure</span></div>
+          <div class="resource-link"><span>WASI Platform GitHub</span><span>narrative</span></div>
+          <div class="resource-link"><span>FastAPI app</span><span>live data</span></div>
+        </div>
+      </section>
+
+      <section class="panel sidebar-panel">
+        <h3>Platform lanes</h3>
+        <div class="chips">
+          <span class="chip">Intelligence</span>
+          <span class="chip">DEX</span>
+          <span class="chip">Banking</span>
+          <span class="chip">Credit</span>
+          <span class="chip">UEMOA</span>
+          <span class="chip">Africa 54</span>
+        </div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <section class="panel hero" id="overview">
+        <div class="hero-grid">
+          <div>
+            <p class="eyebrow">Unified operator surface</p>
+            <h1>One WASI screen that finally makes sense.</h1>
+            <p>
+              This page merges the ecosystem language from the public WASI platform, the disciplined navigation pattern
+              from the standalone DEX site, and the real connected intelligence workflow from your Python backend.
+              Instead of three separate experiences, you now get one operating workspace for market exposure, borrower health,
+              treasury posture, and product storytelling.
+            </p>
+          </div>
+          <div class="hero-rail">
+            <div class="hero-card">
+              <small>Afrique</small>
+              <strong>54-country narrative</strong>
+              <div class="metric-sub">The page keeps the wider WASI story visible, not just the demo API calls.</div>
+            </div>
+            <div class="hero-card">
+              <small>DEX + MFI</small>
+              <strong>Live connected score</strong>
+              <div class="metric-sub">The dashboard still talks to your real FastAPI endpoints for auth, demo seed, and intelligence.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel section" id="access">
+        <div class="section-header">
+          <div>
+            <h2>Access & Demo Bootstrap</h2>
+            <p>Use the real auth API, then load seeded DEX and microfinance data into the signed-in user account.</p>
+          </div>
+          <div class="chips">
+            <span class="chip">/api/auth/register</span>
+            <span class="chip">/api/auth/login</span>
+            <span class="chip">/api/demo/bootstrap</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="auth-grid">
+            <input id="username" placeholder="Username" value="demoapp2">
+            <input id="email" placeholder="Email" value="demoapp2@example.com">
+            <input id="password" type="password" placeholder="Password" value="demoapp123">
+          </div>
+          <div class="button-row" style="margin-top:14px;">
+            <button class="primary" id="registerBtn">Register</button>
+            <button class="secondary" id="loginBtn">Login</button>
+            <button class="warm" id="seedBtn">Load Demo Data</button>
+            <button class="secondary" id="refreshBtn">Refresh Intelligence</button>
+            <button class="secondary" id="logoutBtn">Clear Session</button>
+          </div>
+          <div id="status" class="status">Register or log in, then click “Load Demo Data” to populate the workspace.</div>
+        </div>
+      </section>
+
+      <section class="panel section" id="intelligence">
+        <div class="section-header">
+          <div>
+            <h2>Connected Intelligence</h2>
+            <p>The working center of the app: DEX performance, borrower risk, and treasury guidance read from one endpoint.</p>
+          </div>
+          <div class="chips">
+            <span class="chip">/api/v3/intelligence/connected</span>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="card">
+            <span class="metric-label">Connected Score</span>
+            <div class="metric-value" id="connectedScore">--</div>
+            <div class="metric-sub" id="connectedNarrative">No intelligence loaded yet.</div>
+          </div>
+          <div class="card">
+            <span class="metric-label">DEX Current Value</span>
+            <div class="metric-value" id="dexValue">--</div>
+            <div class="metric-sub" id="dexPnL">P&L pending</div>
+          </div>
+          <div class="card">
+            <span class="metric-label">MFI Outstanding</span>
+            <div class="metric-value" id="mfiOutstanding">--</div>
+            <div class="metric-sub" id="mfiRepayment">Repayment rate pending</div>
+          </div>
+          <div class="card">
+            <span class="metric-label">Overdue Loans</span>
+            <div class="metric-value" id="overdueLoans">--</div>
+            <div class="metric-sub" id="portfolioMix">Portfolio mix pending</div>
+          </div>
+        </div>
+
+        <div class="two-col" style="margin-top:16px;">
+          <div class="card">
+            <h3>DEX Desk</h3>
+            <ul class="data-list" id="holdingsList">
+              <li class="data-row"><div class="row-copy">No holdings loaded yet.</div></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Microfinance Book</h3>
+            <ul class="data-list" id="mfiList">
+              <li class="data-row"><div class="row-copy">No borrower portfolio loaded yet.</div></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="two-col" style="margin-top:16px;">
+          <div class="card">
+            <h3>Exposure Matrix</h3>
+            <div class="matrix" id="exposureMatrix">
+              <div class="card">
+                <span class="tag">waiting</span>
+                <div class="row-copy">Seed demo data to render DEX category exposure.</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Operator Recommendations</h3>
+            <div id="recommendations">
+              <div class="recommendation">
+                <span class="pill">idle</span>
+                <p>Sign in and refresh intelligence to see live cross-module recommendations.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel section" id="ecosystem">
+        <div class="section-header">
+          <div>
+            <h2>WASI Ecosystem Context</h2>
+            <p>This keeps the bigger product logic visible: intelligence engine, DEX operator view, banking rails, and credit products in one product story.</p>
+          </div>
+        </div>
+
+        <div class="three-col">
+          <div class="card">
+            <h3>Intelligence</h3>
+            <div class="tag">Afrique · 54 pays</div>
+            <div class="row-copy">
+              The public WASI platform speaks in continent-scale terms: risk, corridors, exchange opportunity, and macro operating visibility.
+              This panel preserves that positioning while the live cards above handle user-level intelligence.
+            </div>
+          </div>
+          <div class="card">
+            <h3>DEX</h3>
+            <div class="tag">Portfolio · exposure · pricing</div>
+            <div class="row-copy">
+              The standalone DEX UI contributed the cleaner terminal rhythm: topbar, side navigation, view discipline, and a market-operating tone instead of generic app chrome.
+            </div>
+          </div>
+          <div class="card">
+            <h3>Banking & Credit</h3>
+            <div class="tag">Wallet · transfers · lending</div>
+            <div class="row-copy">
+              The GitHub platform surface included banking and scoring language. This merged version keeps that lane visible so the app reads as a treasury operating system, not only an analytics toy.
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="footer">
+    WASI Platform workspace · merged from the DEX site structure, the public WASI platform narrative, and the live FastAPI connected intelligence flow.
+  </div>
+
+  <script>
+    const els = {
+      username: document.getElementById('username'),
+      email: document.getElementById('email'),
+      password: document.getElementById('password'),
+      status: document.getElementById('status'),
+      connectedScore: document.getElementById('connectedScore'),
+      connectedNarrative: document.getElementById('connectedNarrative'),
+      dexValue: document.getElementById('dexValue'),
+      dexPnL: document.getElementById('dexPnL'),
+      mfiOutstanding: document.getElementById('mfiOutstanding'),
+      mfiRepayment: document.getElementById('mfiRepayment'),
+      overdueLoans: document.getElementById('overdueLoans'),
+      portfolioMix: document.getElementById('portfolioMix'),
+      holdingsList: document.getElementById('holdingsList'),
+      mfiList: document.getElementById('mfiList'),
+      exposureMatrix: document.getElementById('exposureMatrix'),
+      recommendations: document.getElementById('recommendations'),
+      clock: document.getElementById('clock')
+    };
+
+    const tokenKey = 'wasi-demo-token';
+    const getToken = () => localStorage.getItem(tokenKey);
+    const setToken = (token) => localStorage.setItem(tokenKey, token);
+    const clearToken = () => localStorage.removeItem(tokenKey);
+
+    const setStatus = (message, type = '') => {
+      els.status.className = `status ${type}`.trim();
+      els.status.textContent = message;
+    };
+
+    const formatCurrency = (value) => new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'XOF',
+      maximumFractionDigits: 0
+    }).format(value || 0);
+
+    const formatPct = (value) => `${Number(value || 0).toFixed(1)}%`;
+
+    function updateClock() {
+      els.clock.textContent = new Intl.DateTimeFormat('fr-FR', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      }).format(new Date());
+    }
+    updateClock();
+    setInterval(updateClock, 30000);
+
+    async function request(path, options = {}) {
+      const token = getToken();
+      const headers = new Headers(options.headers || {});
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      const response = await fetch(path, { ...options, headers });
+      const text = await response.text();
+      let data;
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+      if (!response.ok) {
+        const message = data.detail || data.raw || `Request failed (${response.status})`;
+        throw new Error(message);
+      }
+      return data;
+    }
+
+    async function register() {
+      const payload = {
+        username: els.username.value.trim(),
+        email: els.email.value.trim(),
+        password: els.password.value
+      };
+      const data = await request('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      setStatus(`Compte cree pour ${data.username}. Connectez-vous pour activer l'espace unifie.`, 'success');
+    }
+
+    async function login() {
+      const body = new URLSearchParams({
+        username: els.username.value.trim(),
+        password: els.password.value
+      });
+      const data = await request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body
+      });
+      setToken(data.access_token);
+      setStatus('Connexion reussie. La session locale est active pour les routes live WASI.', 'success');
+      await refreshDashboard();
+    }
+
+    async function seedDemo() {
+      const data = await request('/api/demo/bootstrap', { method: 'POST' });
+      setStatus(`${data.message} Tickers charges: ${data.tickers.join(', ')}.`, 'success');
+      await refreshDashboard();
+    }
+
+    function renderHoldings(data) {
+      els.holdingsList.innerHTML = data.dex.holdings.length
+        ? data.dex.holdings.map(item => `
+            <li class="data-row">
+              <div class="row-head">
+                <strong>${item.ticker}</strong>
+                <span class="pill ${item.unrealized_pnl_xof >= 0 ? 'good' : 'warn'}">${item.category || 'ETF'}</span>
+              </div>
+              <div class="row-meta"><span>Valeur actuelle</span><span>${formatCurrency(item.current_value_xof)}</span></div>
+              <div class="row-meta"><span>PRU</span><span>${formatCurrency(item.average_cost_xof)}</span></div>
+              <div class="row-meta"><span>P&L latent</span><span>${formatCurrency(item.unrealized_pnl_xof)}</span></div>
+            </li>
+          `).join('')
+        : `<li class="data-row"><div class="row-copy">Aucune position DEX liee pour le moment.</div></li>`;
+    }
+
+    function renderMicrofinance(data) {
+      const rows = [
+        { label: 'Clients actifs', value: data.microfinance.client_count },
+        { label: 'Prets actifs', value: data.microfinance.active_loan_count },
+        { label: 'Repayment rate', value: formatPct(data.microfinance.repayment_rate_pct) },
+        { label: 'PAR30', value: formatCurrency(data.microfinance.par30_xof) },
+        { label: 'Top sector', value: data.microfinance.top_sector || '--' }
+      ];
+
+      els.mfiList.innerHTML = rows.map(row => `
+        <li class="data-row">
+          <div class="row-meta"><span>${row.label}</span><span class="strong">${row.value}</span></div>
+        </li>
+      `).join('');
+    }
+
+    function renderExposure(data) {
+      els.exposureMatrix.innerHTML = data.dex.category_exposure.length
+        ? data.dex.category_exposure.map(item => `
+            <div class="card">
+              <span class="tag">${item.category}</span>
+              <div class="metric-value">${item.weight_pct.toFixed(1)}%</div>
+              <div class="metric-sub">${formatCurrency(item.current_value_xof)} of portfolio value</div>
+            </div>
+          `).join('')
+        : `
+            <div class="card">
+              <span class="tag">waiting</span>
+              <div class="row-copy">Chargez les donnees demo pour faire apparaitre la matrice d'exposition DEX.</div>
+            </div>
+          `;
+    }
+
+    function renderRecommendations(data) {
+      els.recommendations.innerHTML = data.recommendations.length
+        ? data.recommendations.map(item => `
+            <div class="recommendation">
+              <span class="pill ${item.priority === 1 ? 'warn' : ''}">${item.domain}</span>
+              <div class="row-head" style="margin-top:8px;"><strong>${item.title}</strong><span>P${item.priority}</span></div>
+              <p>${item.detail}</p>
+            </div>
+          `).join('')
+        : `
+            <div class="recommendation">
+              <span class="pill good">clear</span>
+              <p>Aucune recommandation immediate.</p>
+            </div>
+          `;
+    }
+
+    function renderDashboard(data) {
+      els.connectedScore.textContent = Number(data.connected_score || 0).toFixed(1);
+      els.connectedNarrative.textContent = data.connected_score >= 80
+        ? 'Strong integrated posture across treasury and lending.'
+        : data.connected_score >= 60
+          ? 'Balanced platform, with some operating priorities still open.'
+          : 'Early-stage operating setup. Use seeded flows to complete the picture.';
+      els.dexValue.textContent = formatCurrency(data.dex.current_value_xof);
+      els.dexPnL.textContent = `Unrealized P&L ${formatCurrency(data.dex.unrealized_pnl_xof)} · ${data.dex.holding_count} holdings`;
+      els.mfiOutstanding.textContent = formatCurrency(data.microfinance.outstanding_balance_xof);
+      els.mfiRepayment.textContent = `Repayment rate ${formatPct(data.microfinance.repayment_rate_pct)}`;
+      els.overdueLoans.textContent = String(data.microfinance.overdue_loan_count ?? 0);
+      els.portfolioMix.textContent = `${data.microfinance.client_count} clients · ${data.dex.category_exposure.length} DEX categories`;
+
+      renderHoldings(data);
+      renderMicrofinance(data);
+      renderExposure(data);
+      renderRecommendations(data);
+    }
+
+    async function refreshDashboard() {
+      const data = await request('/api/v3/intelligence/connected');
+      renderDashboard(data);
+      setStatus('Vue connectee mise a jour depuis le backend FastAPI live.', 'success');
+    }
+
+    document.getElementById('registerBtn').addEventListener('click', async () => {
+      try { await register(); } catch (error) { setStatus(error.message, 'error'); }
+    });
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      try { await login(); } catch (error) { setStatus(error.message, 'error'); }
+    });
+    document.getElementById('seedBtn').addEventListener('click', async () => {
+      try { await seedDemo(); } catch (error) { setStatus(error.message, 'error'); }
+    });
+    document.getElementById('refreshBtn').addEventListener('click', async () => {
+      try { await refreshDashboard(); } catch (error) { setStatus(error.message, 'error'); }
+    });
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      clearToken();
+      setStatus('Session locale effacee.', 'success');
+    });
+
+    if (getToken()) {
+      refreshDashboard().catch((error) => setStatus(error.message, 'error'));
+    }
+  </script>
+</body>
+</html>
